@@ -7,12 +7,19 @@
 import os
 import re
 import sys
+import argparse
 import shutil
 import string
 import urllib.request
 import tarfile
 import scipy.io
 import numpy as np
+
+### Script arguments ###########################################################
+
+parser = argparse.ArgumentParser(description='Prepares Char47K database.')
+parser.add_argument('-c', '--check-only', action='store_true',
+    help='just checks if all main directories in database exist, returns non-zero if any directory is missing')
 
 ### Definitions ################################################################
 
@@ -133,8 +140,15 @@ def maybe_unarchive():
 ### Main #######################################################################
 
 if __name__ == '__main__':
+    args = parser.parse_args()
+
     destdirs = [mapping[1] for mappings in archive_mappings.values() for mapping in mappings]
-    if all(dirname.strip('/') in os.listdir(base_dir) for dirname in destdirs):
+    all_dirs_exist = all(dirname.strip('/') in os.listdir(base_dir) for dirname in destdirs)
+
+    if args.check_only:
+        sys.exit(0 if all_dirs_exist else 1)
+
+    if all_dirs_exist:
         print('All directories exist. If you want fresh database, remove them first.')
     else:
         print('No database or missing a directory.')
@@ -146,8 +160,9 @@ if __name__ == '__main__':
         maybe_download()
         maybe_unarchive()
 
-    answer = input('Do you want to remove temporary files? [Y/n] ')
-    if not answer.lower().strip() in ['y', 'yes']:
-        print('Aborting')
-        sys.exit()
-    shutil.rmtree(download_dir)
+    if os.path.exists(download_dir):
+        answer = input('Do you want to remove temporary files? [Y/n] ')
+        if not answer.lower().strip() in ['y', 'yes']:
+            print('Aborting')
+            sys.exit()
+        shutil.rmtree(download_dir)
