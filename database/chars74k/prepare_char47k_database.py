@@ -1,32 +1,49 @@
 #! /usr/bin/env python3
 # coding: utf-8
+#
+# Downloads and prepares database from:
+#   http://www.ee.surrey.ac.uk/CVSSP/demos/chars74k/
 
 import os
 import re
+import sys
+import shutil
 import string
 import urllib.request
 import tarfile
 import scipy.io
 import numpy as np
 
+### Definitions ################################################################
 
 this_dir = os.path.dirname(os.path.abspath(os.path.realpath(__file__)))
 base_dir = this_dir
 download_dir = os.path.join(base_dir, 'tmp')
+
 urls = [
         'http://www.ee.surrey.ac.uk/CVSSP/demos/chars74k/EnglishImg.tgz',
         'http://www.ee.surrey.ac.uk/CVSSP/demos/chars74k/EnglishHnd.tgz',
         'http://www.ee.surrey.ac.uk/CVSSP/demos/chars74k/EnglishFnt.tgz',
-        'http://www.ee.surrey.ac.uk/CVSSP/demos/chars74k/Lists.tgz'
+        #  'http://www.ee.surrey.ac.uk/CVSSP/demos/chars74k/Lists.tgz'  # not used
     ]
+# archive_mappings = {archive_name: [(in_archive_from_dir, to_dir), ...])
+archive_mappings = {
+    'EnglishFnt.tgz': [('English/Fnt/',             'font/'    ), ],
+    'EnglishHnd.tgz': [('English/Hnd/Img/',         'hand/'    ), ],
+    'EnglishImg.tgz': [('English/Img/GoodImg/Bmp/', 'img_good/'),
+                       ('English/Img/BadImag/Bmp/', 'img_bad/' ), ],
+}
 
+# charater classes
 char47k_class_numbers = np.arange(1, 62+1)
 classes = '0123456789' + string.ascii_uppercase + string.ascii_lowercase
 assert len(classes) == len(char47k_class_numbers)
+
 # for spliting samples into training/test sets "deterministically randomly" - random-like but each time the same
 fixed_pseudorandom_seed = 135797531
 train_samples_percentage = 80
 
+### Functions ##################################################################
 
 def maybe_download():
     if not os.path.exists(download_dir):
@@ -35,11 +52,11 @@ def maybe_download():
     for url in urls:
         name = url.split('/')[-1]
         filepath = os.path.join(download_dir, name)
-        print('  ... %s ...' % name, end='')
+        print('  ... %s ...' % name, end='', flush=True)
         if os.path.exists(filepath):
             print(' exists')
         else:
-            print(' downloading ...', end='')
+            print(' downloading ...', end='', flush=True)
             urllib.request.urlretrieve(url, filepath)
             print(' done')
 
@@ -95,13 +112,6 @@ def extract_samples(tar, tar_fromdir, destdir, print_base_str):
     return last_string
 
 def maybe_unarchive():
-    # archive_mappings = {archive_name: [(in_archive_from_dir, to_dir), ...])
-    archive_mappings = {
-        'EnglishFnt.tgz': [('English/Fnt/',             'font/'    ), ],
-        'EnglishHnd.tgz': [('English/Hnd/Img/',         'hand/'    ), ],
-        'EnglishImg.tgz': [('English/Img/GoodImg/Bmp/', 'img_good/'),
-                           ('English/Img/BadImag/Bmp/', 'img_bad/' ), ],
-    }
     print('Extracting archives...', flush=True)
     for archive_name, mappings in archive_mappings.items():
         base = '  ... %s' % archive_name
@@ -120,8 +130,24 @@ def maybe_unarchive():
             print('\r' + base, end='', flush=True)
         print('done', flush=True)
 
+### Main #######################################################################
 
 if __name__ == '__main__':
-    maybe_download()
-    maybe_unarchive()
+    destdirs = [mapping[1] for mappings in archive_mappings.values() for mapping in mappings]
+    if all(dirname.strip('/') in os.listdir(base_dir) for dirname in destdirs):
+        print('All directories exist. If you want fresh database, remove them first.')
+    else:
+        print('No database or missing a directory.')
+        answer = input('Starting whole database preparation, proceed? [Y/n] ')
+        if not answer.lower().strip() in ['y', 'yes']:
+            print('Aborting')
+            sys.exit()
 
+        maybe_download()
+        maybe_unarchive()
+
+    answer = input('Do you want to remove temporary files? [Y/n] ')
+    if not answer.lower().strip() in ['y', 'yes']:
+        print('Aborting')
+        sys.exit()
+    shutil.rmtree(download_dir)
