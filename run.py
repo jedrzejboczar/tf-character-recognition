@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
 import argparse
 import tensorflow as tf
 
@@ -8,6 +9,8 @@ import cnn_model
 import database.data
 
 ################################################################################
+
+# (note) for gpu usage monitoring: optirun nvidia-smi -l 2
 
 DEFAULTS = {
     'epochs': 1,
@@ -40,7 +43,8 @@ def main():
         train_dataset, test_dataset = database.data.load_datasets()
         return test_dataset.batch(args.batch_size).prefetch(1)
 
-    def predict_input_fn(filenames):
+    def predict_input_fn():
+        filenames = args.predict
         images = list(map(database.data.load_image, filenames))
         return tf.data.Dataset.from_tensor_slices(images).batch(args.batch_size)
 
@@ -53,17 +57,17 @@ def main():
 
     if args.predict:
         predictions = estimator.predict(predict_input_fn)
-        filenames = list(args.predict)
+        common_path = os.path.split(os.path.commonprefix(args.predict))[0]
+        filenames = [os.path.relpath(path, start=common_path) for path in args.predict]
+        max_filename_len = max(len(name) for name in filenames)
+
         print('Predictions:')
-        for prediction_dict in predictions:
-            for i, pred_ij in enumerate(prediction_dict['predictions']):
-                # i       - i-th image in batch
-                # pred_ij - j-th class (prediction) for i-th image
-                filename = filenames.pop(0)
-                label = database.data.CLASSES[pred_ij]
-                probability = prediction_dict['probabilities'][pred_ij]
-                print('%s: %s (%.2f %%)' % (filename, label, probability))
-        assert len(filenames) == 0
+        for filename, prediction_dict in zip(filenames, predictions):
+            pi = prediction_dict['predictions']
+            label = database.data.CLASSES[pi]
+            probability = prediction_dict['probabilities'][pi]
+            print('{name:>{nlen}}: {lab} ({prob:6.2f} %)'.format(name=filename,
+                nlen=max_filename_len, lab=label, prob=probability * 100))
 
 
 if __name__ == '__main__':
