@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import string
 import logging
 
 import cv2
 import numpy as np
 import tensorflow as tf
 
-import database.loaders
+import database.loaders as db
 
 
 def _on_first(func):
@@ -25,19 +24,18 @@ class Database:
     and of type tf.float32. Label is a number from 0 to 61 representing index of
     that label in LABELS.
     """
-    LABELS = '0123456789' + string.ascii_uppercase + string.ascii_lowercase
-    CLASSES = LABELS
+    LABELS = CLASSES = db.LABELS
     N_CLASSES = len(CLASSES)
     IMAGE_SIZE = (28, 28)
     DATASETS = {
-        'Char47K': database.loaders.Char47KLoader,
+        'Char47K': db.Char47KLoader(hand_upscale=10, images_upscale=3),
         }
 
     def __init__(self, datasets='all', num_parallel_calls=3):
         self.num_parallel_calls = num_parallel_calls
         self.logger = logging.getLogger('database')
         datasets = self.DATASETS.keys() if datasets == 'all' else datasets
-        self.loaders = [self.DATASETS[db](self.LABELS) for db in datasets]
+        self.loaders = [self.DATASETS[db] for db in datasets]
 
     def get_train_dataset(self):
         filenames, labels = self.load_all_files('train')

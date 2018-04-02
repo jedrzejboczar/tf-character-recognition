@@ -3,6 +3,7 @@
 
 import os
 import sys
+import logging
 import argparse
 import tensorflow as tf
 
@@ -43,8 +44,10 @@ def main():
         return
 
     # configure verbosity
-    verbosity = tf.logging.ERROR - args.verbose * tf.logging.DEBUG
-    tf.logging.set_verbosity(max(tf.logging.DEBUG, verbosity))
+    verbosity = max(tf.logging.DEBUG, tf.logging.ERROR - args.verbose * tf.logging.DEBUG)
+    # logging.basicConfig(format='[%(levelname)s] (%(asctime)s) %(message)s', level=verbosity)
+    logging.basicConfig(format='[%(levelname)s] (%(asctime)s) %(message)s', level=verbosity)
+    tf.logging.set_verbosity(verbosity)
 
     database = data.Database()
     estimator = cnn_model.get_estimator()

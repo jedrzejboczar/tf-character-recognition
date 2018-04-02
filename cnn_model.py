@@ -9,7 +9,7 @@ import data
 def get_estimator():
     return tf.estimator.Estimator(
         model,
-        model_dir='models/cnn_mnist_like',
+        model_dir='models/cnn_mnistlike_dbupscale',
         params={},
     )
 
