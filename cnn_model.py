@@ -3,7 +3,7 @@
 
 import tensorflow as tf
 
-from database import Database
+import data
 
 
 def get_estimator():
@@ -32,14 +32,14 @@ def model(features, labels, mode, config, params):
     flat = tf.layers.flatten(pool2)
     dense1 = tf.layers.dense(flat, 1024, activation=tf.nn.relu)
     dense1_dropout = tf.layers.dropout(dense1, rate=.4, training=mode == ModeKeys.TRAIN)
-    logits = tf.layers.dense(dense1_dropout, Database.N_CLASSES)
+    logits = tf.layers.dense(dense1_dropout, data.Database.N_CLASSES)
 
     if mode == ModeKeys.PREDICT:
         predictions = {
             'predictions': tf.argmax(logits, axis=1),  # index of best prediction for each image
             'logits': logits,
             'probabilities': tf.nn.softmax(logits),
-            'top_indices': tf.nn.top_k(logits, k=Database.N_CLASSES).indices,
+            'top_indices': tf.nn.top_k(logits, k=data.Database.N_CLASSES).indices,
         }
         return tf.estimator.EstimatorSpec(mode, predictions)
 

@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 import argparse
 import tensorflow as tf
 
+import gui
+import data
 import cnn_model
-from database import Database
 
 ################################################################################
 
@@ -28,16 +30,29 @@ parser.add_argument('-E', '--eval', action='store_true',
     help='Evaluate accurancy on the test database')
 parser.add_argument('-P', '--predict', nargs='+', metavar='IMG_FILE',
     help='Perform prediction on given image files')
+parser.add_argument('-G', '--gui', action='store_true',
+    help='Run interactive prediction GUI (discards other options)')
+parser.add_argument('-v', '--verbose', action='count', default=0,
+    help='Increase verbosity ERROR -> WARN -> INFO -> DEBUG (for each usage of this argument)')
 
 
 def main():
     args = parser.parse_args()
-    if not (args.train or args.eval or args.predict):
+    if not (args.train or args.eval or args.predict or args.gui):
         print('No action specified (see --help).')
         return
 
-    database = Database()
+    # configure verbosity
+    verbosity = tf.logging.ERROR - args.verbose * tf.logging.DEBUG
+    tf.logging.set_verbosity(max(tf.logging.DEBUG, verbosity))
+
+    database = data.Database()
     estimator = cnn_model.get_estimator()
+
+    if args.gui:
+        print('Using CPU only for better performance in GUI mode')
+        os.environ['CUDA_VISIBLE_DEVICES'] = ''
+        gui.runApp(estimator)
 
     def train_input_fn():
         return database.get_train_dataset().cache().shuffle(50000).batch(
@@ -72,5 +87,4 @@ def main():
 
 
 if __name__ == '__main__':
-    tf.logging.set_verbosity(tf.logging.INFO)
     main()

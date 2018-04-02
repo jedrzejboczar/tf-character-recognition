@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
 import string
 import logging
-import subprocess
 
 import cv2
 import numpy as np
 import tensorflow as tf
+
+import database.loaders
 
 
 def _on_first(func):
@@ -29,13 +29,15 @@ class Database:
     CLASSES = LABELS
     N_CLASSES = len(CLASSES)
     IMAGE_SIZE = (28, 28)
+    DATASETS = {
+        'Char47K': database.loaders.Char47KLoader,
+        }
 
-    def __init__(self):
-        this_dir = os.path.dirname(os.path.abspath(os.path.realpath(__file__)))
-        self.database_dir = os.path.join(this_dir, 'database')
+    def __init__(self, datasets='all', num_parallel_calls=3):
+        self.num_parallel_calls = num_parallel_calls
         self.logger = logging.getLogger('database')
-        self.loaders = [self.load_chars74k_files, ]
-        self.num_parallel_calls = 3
+        datasets = self.DATASETS.keys() if datasets == 'all' else datasets
+        self.loaders = [self.DATASETS[db](self.LABELS) for db in datasets]
 
     def get_train_dataset(self):
         filenames, labels = self.load_all_files('train')
@@ -78,45 +80,13 @@ class Database:
         """
         which = [which] if isinstance(which, str) else which
         all_data = {train_or_test: ([], []) for train_or_test in which}
-        for data in (loader(which) for loader in self.loaders):
+        for data in (loader.load_files(which) for loader in self.loaders):
             for train_test in which:
                 all_data[train_test][0].extend(data[train_test][0])
                 all_data[train_test][1].extend(data[train_test][1])
         if squeeze and len(which) == 1:
             all_data = all_data[which[0]]
         return all_data
-
-    def load_chars74k_files(self, which_types):
-        """Loads data from Char47K database.
-
-        It contains 78905 PNG images (font:hand:igood:ibad -> 62992:3410:4798:7705).
-        The database consists of 3 groups:          (height x width x channels)
-            font - images generated from fonts      (128x128x3)
-            hand - images drawn on tablet           (900x1200x3)
-            img_good - photos of different sizes    (from 6x16x3 to 391x539x3)
-            img_bad - photos with worse quality     (from 11x7x3 to 464x325x3)
-
-        which_types - must be a list of types ['test', 'train']
-
-        Returns dictionary (with keys 'which_types') of tuples of lists:
-            { 'test': ([filepath, ...], [label, ...]), 'train': ... }
-        """
-        chars74k_dir = os.path.join(self.database_dir, 'chars74k')
-        result = subprocess.run(['./prepare_database.py', '--check-only'], cwd=chars74k_dir)
-        if result.returncode != 0:
-            logger.warn('Chars74K may be incomplete. Please check in %s.' % chars74k_dir)
-        # gather data as tuple of lists ([filepaths], [labels])
-        data = {train_or_test: ([], []) for train_or_test in which_types}
-        for dirname in ['font/', 'hand/', 'img_bad', 'img_good']:
-            for train_or_test in which_types:
-                for label in self.LABELS:
-                    classdir_path = os.path.join(chars74k_dir, dirname, train_or_test, label)
-                    for filename in os.listdir(classdir_path):
-                        filepath = os.path.join(classdir_path, filename)
-                        numeric_label = self.LABELS.find(label)
-                        data[train_or_test][0].append(filepath)
-                        data[train_or_test][1].append(numeric_label)
-        return data
 
 ################################################################################
 
