@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 import tensorflow as tf
 
-import database.loaders as db
+import database.loaders
 
 
 def _on_first(func):
@@ -24,29 +24,44 @@ class Database:
     and of type tf.float32. Label is a number from 0 to 61 representing index of
     that label in LABELS.
     """
-    LABELS = CLASSES = db.LABELS
+    LABELS = CLASSES = database.loaders.LABELS
     N_CLASSES = len(CLASSES)
     IMAGE_SIZE = (28, 28)
     DATASETS = {
-        'Char47K': db.Char47KLoader(hand_upscale=10, images_upscale=3),
+        'Char47K': database.loaders.Char47K(hand_upscale=10, images_upscale=3),
         }
 
-    def __init__(self, datasets='all', num_parallel_calls=3):
-        self.num_parallel_calls = num_parallel_calls
+    def __init__(self, num_parallel_calls=3):
+        self.n_parallel = num_parallel_calls
         self.logger = logging.getLogger('database')
-        datasets = self.DATASETS.keys() if datasets == 'all' else datasets
-        self.loaders = [self.DATASETS[db] for db in datasets]
+        self.loaders = list(self.DATASETS.values())
 
     def get_train_dataset(self):
-        filenames, labels = self.load_all_files('train')
-        return self.prepare_dataset(filenames, labels)
+        return self.get_dataset(is_training=True)
 
     def get_test_dataset(self):
-        filenames, labels = self.load_all_files('test')
-        return self.prepare_dataset(filenames, labels)
+        return self.get_dataset(is_training=False)
 
-    def prepare_dataset(self, filenames, labels=None):
-        """Creates dataset from filenames and labels.
+    def get_dataset(self, is_training):
+        if is_training:
+            datasets = [loader.get_train_dataset() for loader in self.loaders]
+        else:
+            datasets = [loader.get_test_dataset() for loader in self.loaders]
+        dataset = datasets[0]
+        for ds in datasets[1:]:
+            dataset = dataset.concatenate(ds)
+        # shuffle much once at the begging and cache results (training only)
+        if is_training:  # 100k should take at most 10MB in RAM
+            dataset = dataset.shuffle(100000, reshuffle_each_iteration=False).cache()
+        # load images
+        dataset = dataset.map(_on_first(self.load_image), num_parallel_calls=self.n_parallel)
+        # for now leave rest of operations for others, e.g.:
+        #   .cache().shuffle(small_buffer).batch(size).repeat(epochs).prefetch(1)
+        #   or without .cache as it will take much RAM because caching whole images
+        return dataset
+
+    def from_files(self, filepaths, labels=None):
+        """Creates dataset from filenames and labels (e.g. for predict_input_fn())
 
         The dataset elements are[*] of form (image, label) where image
         is float32 2D tesnsor of IMAGE_SIZE and label is a number 0-61.
@@ -54,9 +69,9 @@ class Database:
         [*] If labels is None, creates dataset of images only (each element is a
         single Tensor, not tuple).
         """
-        data = (filenames, labels) if labels else filenames
+        data = (filepaths, labels) if labels else filepaths
         dataset = tf.data.Dataset.from_tensor_slices(data)
-        return dataset.map(_on_first(self.load_image), self.num_parallel_calls)
+        return dataset.map(_on_first(self.load_image), num_parallel_calls=self.n_parallel)
 
     def load_image(self, filepath):
         """Reads image and resizes it. Pixel values are float32 from 0 256."""
@@ -65,26 +80,6 @@ class Database:
         image = tf.image.decode_png(image_bytes, channels=3)
         image = tf.image.resize_images(image, self.IMAGE_SIZE)
         return image
-
-    def load_all_files(self, which, squeeze=True):
-        """Gathers files from all the loaders.
-
-        which - can be 'test', 'train' or both ['test', 'train']
-        squeeze - if requested only one type as 'which', returns just the
-            dictionary entry for that type
-
-        Returns dictionary (with keys 'which') of tuples of lists:
-            { 'test': ([filepath, ...], [label, ...]), 'train': ... }
-        """
-        which = [which] if isinstance(which, str) else which
-        all_data = {train_or_test: ([], []) for train_or_test in which}
-        for data in (loader.load_files(which) for loader in self.loaders):
-            for train_test in which:
-                all_data[train_test][0].extend(data[train_test][0])
-                all_data[train_test][1].extend(data[train_test][1])
-        if squeeze and len(which) == 1:
-            all_data = all_data[which[0]]
-        return all_data
 
 ################################################################################
 

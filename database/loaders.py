@@ -5,31 +5,31 @@ import os
 import string
 import logging
 import subprocess
-
+import numpy as np
+import tensorflow as tf
 
 LABELS = '0123456789' + string.ascii_uppercase + string.ascii_lowercase
 
 
 class AbstractDatasetLoader:
     """
-    Class that creates lists of files for the given dataset (from the datasets'
-    directory structure).
+    Class that creates a dataset of tuples (filepath, label).
     """
     def __init__(self):
         this_dir = os.path.dirname(os.path.abspath(os.path.realpath(__file__)))
         self.database_dir = os.path.join(this_dir)
         self.logger = logging.getLogger('dataset_loaders')
 
-    def load_files(self, which):
-        raise NotImplementedError("""
-        The function to load all pairs (filepath, label) of the given dataset.
-        Must return dictionary (with keys from 'which') of tuples of lists:
-            { 'test': ([filepath, ...], [label, ...]), 'train': ... }
-        which - must be a list of types: ['test', 'train'] (one or both)
-        """.strip())
+    def get_train_dataset(self):
+        # should return tf.data.Dataset of tuples (filepath, label)
+        raise NotImplementedError('Abstract')
+
+    def get_test_dataset(self):
+        # should return tf.data.Dataset of tuples (filepath, label)
+        raise NotImplementedError('Abstract')
 
 
-class Char47KLoader(AbstractDatasetLoader):
+class Char47K(AbstractDatasetLoader):
     """Loads data from Char47K database.
 
     The database consists of 3 groups:          (height x width x channels)
@@ -42,12 +42,30 @@ class Char47KLoader(AbstractDatasetLoader):
     ones, it is possible to set images upscaling for training data, which results
     in adding these images 'xxx_upscale' times.
     """
-    def __init__(self, hand_upscale=1, images_upscale=1):
+    def __init__(self, hand_upscale=1, images_upscale=1,
+            dirs=['font', 'hand', 'img_bad', 'img_good']):
         super().__init__()
-        self.hand_upscale = hand_upscale
-        self.images_upscale = images_upscale
+        self.hand_up = hand_upscale
+        self.images_up = images_upscale
         self.chars74k_dir = os.path.join(self.database_dir, 'chars74k')
-        self.main_dirs = ['font', 'hand', 'img_bad', 'img_good']
+        self.dirs = dirs
+        self.check()
+
+    def get_train_dataset(self):
+        return self._load_files('train')
+
+    def get_test_dataset(self):
+        return self._load_files('test')
+
+    @staticmethod
+    def path2label(path):
+        """Given proper path to a file from the database returns (path, label)."""
+        sparse = tf.string_split([path], delimiter='/')
+        label = sparse.values[-2]
+        numeric_label = tf.where(tf.equal(label, list(LABELS)), name='XDXD')
+        numeric_label = tf.squeeze(numeric_label)
+        tf.assert_rank(numeric_label, 0)  # should be a scalar
+        return path, numeric_label
 
     def check(self):
         result = subprocess.run(['./prepare_database.py', '--check-only'], cwd=self.chars74k_dir)
@@ -56,33 +74,22 @@ class Char47KLoader(AbstractDatasetLoader):
         else:
             self.logger.debug('Chars74K seems to be complete (all directories exist)')
 
-    def getUpscaling(self, dir):
-        if dir == 'hand': return self.hand_upscale
-        if dir in ['img_bad', 'img_good']: return self.images_upscale
-        return 1
-
-    def load_files(self, which):
-        self.check()
-        # gather data as tuple of lists ([filepaths], [labels])
-        data = {train_or_test: ([], []) for train_or_test in which}
-        counts = {tt: {dir: 0 for dir in self.main_dirs} for tt in which}
-        for dirname in self.main_dirs:
-            upscaling = self.getUpscaling(dirname)
-            for train_or_test in which:
-                for label in LABELS:
-                    classdir_path = os.path.join(self.chars74k_dir, dirname, train_or_test, label)
-                    for filename in os.listdir(classdir_path):
-                        filepath = os.path.join(classdir_path, filename)
-                        numeric_label = LABELS.find(label)
-                        repeats = upscaling if train_or_test == 'train' else 1
-                        for _ in range(repeats):
-                            counts[train_or_test][dirname] += 1
-                            data[train_or_test][0].append(filepath)
-                            data[train_or_test][1].append(numeric_label)
-        for tt in which:
-            n = sum(counts[tt][dir] for dir in counts[tt])
-            self.logger.info('Loaded %d filenames (%s) from Chars74K' % (n, tt))
-            for dir in counts[tt]:
-                self.logger.debug('  {0:>{1}}: {2}'.format(dir,
-                    max(len(d) for d in self.main_dirs), counts[tt][dir]))
-        return data
+    def _load_files(self, mode):
+        assert mode in ['train', 'test'], 'Wrong mode!'
+        # gather file paths
+        pattern = '{dir}/{mode}/{label}/*.png'
+        patterns = [os.path.join(self.chars74k_dir,
+            pattern.format(dir=d, mode=mode, label='*')) for d in self.dirs]
+        # get numbers of repeats
+        repeats = []
+        for dir in self.dirs:
+            n = self.hand_up if dir == 'hand' else \
+                self.images_up if dir in ['img_bad', 'img_good'] else 1
+            repeats.append(n)
+        repeats = np.array(repeats, dtype=np.int64)  # can't be int32
+        patterns = tf.data.Dataset.from_tensor_slices((patterns, repeats))
+        # map each pattern to list of files, then map each file to (file, label)
+        dataset = patterns.interleave(lambda pattern, repeats:
+            tf.data.Dataset.list_files(pattern, shuffle=mode == 'train') \
+            .map(self.path2label).repeat(repeats), cycle_length=1)
+        return dataset

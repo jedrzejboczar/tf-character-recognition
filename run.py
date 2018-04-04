@@ -58,7 +58,7 @@ def main():
         gui.runApp(estimator)
 
     def train_input_fn():
-        return database.get_train_dataset().cache().shuffle(50000).batch(
+        return database.get_train_dataset().shuffle(10000).batch(
             args.batch_size).repeat(args.epochs).prefetch(1)
 
     def eval_input_fn():
