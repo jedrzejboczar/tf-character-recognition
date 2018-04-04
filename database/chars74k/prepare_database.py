@@ -14,6 +14,7 @@ import urllib.request
 import tarfile
 import scipy.io
 import numpy as np
+from PIL import Image
 
 ### Script arguments ###########################################################
 
@@ -137,6 +138,45 @@ def maybe_unarchive():
             print('\r' + base, end='', flush=True)
         print('done', flush=True)
 
+def maybe_resize():
+    # resize hand images from 1200x900 to 120x90 because resizing them each time
+    # is too expensive
+    destsize = (120, 90)
+    filepaths = []
+    print('Resizing...')
+    print('  ... listing files ...', flush=True)
+    for from_dir, to_dir in archive_mappings['EnglishHnd.tgz']:
+        base_path = os.path.join(base_dir, to_dir)
+        for type in ['train', 'test']:
+            base_path_2 = os.path.join(base_path, type)
+            for label_dir in os.listdir(base_path_2):
+                base_path_3 = os.path.join(base_path_2, label_dir)
+                pngs = [os.path.join(base_path_3, fname)
+                    for fname in os.listdir(base_path_3) if fname.endswith('.png')]
+                filepaths.extend(pngs)
+    i, n = 0, len(filepaths)
+    print('\r  ... resizing images ... %d/%d' % (i, n), flush=True, end='')
+    for filepath in filepaths:
+        with Image.open(filepath) as img:
+            # check the size situation
+            is_original_size = img.size == (1200, 900)
+            if not is_original_size:
+                if img.size == destsize:  # is already resized
+                    i += 1
+                    continue
+                # else something completely wrong
+                print('ERROR: database polluted: one of files had neither original size, nor the desired size!',
+                    file=sys.stderr)
+                return
+            assert img.size == (1200, 900), 'All images from EnglishHnd should have size 1200x900'
+            img_new = img.resize(destsize, Image.BILINEAR)
+        img_new.save(filepath)
+        print('\r  ... resizing images ... %d/%d' % (i, n), end='')
+        i += 1
+    print('\r  ... resizing images ... %d/%d ... done' % (i, n), flush=True)
+
+
+
 ### Main #######################################################################
 
 if __name__ == '__main__':
@@ -152,16 +192,17 @@ if __name__ == '__main__':
         print('All directories exist. If you want fresh database, remove them first.')
     else:
         print('No database or missing a directory.')
-        answer = input('Starting whole database preparation, proceed? [Y/n] ')
+        answer = input('Starting whole database preparation, proceed? [y/N] ')
         if not answer.lower().strip() in ['y', 'yes']:
             print('Aborting')
             sys.exit()
 
         maybe_download()
         maybe_unarchive()
+        maybe_resize()
 
     if os.path.exists(download_dir):
-        answer = input('Do you want to remove temporary files? [Y/n] ')
+        answer = input('Do you want to remove temporary files? [y/N] ')
         if not answer.lower().strip() in ['y', 'yes']:
             print('Aborting')
             sys.exit()
