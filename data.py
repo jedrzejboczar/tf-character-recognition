@@ -77,21 +77,59 @@ class Database:
         """Reads image and resizes it. Pixel values are float32 from 0 256."""
         image_bytes = tf.read_file(filepath)
         # because decode_image doesn't return shape ?!
-        image = tf.image.decode_png(image_bytes, channels=3)
+        image = tf.image.decode_png(image_bytes, channels=1)
         image = tf.image.resize_images(image, self.IMAGE_SIZE)
         return image
 
 ################################################################################
 
-# def test_sizes():
-#     data = load_chars74k_files()
-#     sizes = {0}
-#     for img, lab in data['test']:
-#         img = cv2.imread(img)
-#         sizes.add(img.shape)
-#     sizes.remove(0)
-#     for s in sorted(sizes, key=lambda x: x[0]):
-#         print(s)
+def test_sizes():
+    from PIL import Image
+
+    db = database.loaders.Char47K()
+    datasets = {}
+    for dir in ['font', 'hand', 'img_bad', 'img_good']:
+        db = database.loaders.Char47K(dirs=[dir])
+        datasets[dir] = db.get_test_dataset().concatenate(db.get_train_dataset())
+
+    def get_sizes(ds):
+        next = ds.prefetch(10).make_one_shot_iterator().get_next()
+        sizes = []
+        i = 0
+        with tf.Session() as sess:
+            while True:
+                try:
+                    imgfile, lab = sess.run(next)
+                    with Image.open(imgfile) as img:
+                        sizes.append(img.size)
+                    i += 1
+                    if i  % 100 == 0:
+                        print(i, end='\r', flush=True)
+                except tf.errors.OutOfRangeError:
+                    break
+        print()
+        return sizes
+
+    params = {}
+    for dir, sizes in ((dir, get_sizes(ds)) for (dir, ds) in datasets.items()):
+        sizes = np.array(sizes)
+        params[dir] = {}
+        params[dir]['sizes'] = sizes.copy()
+        params[dir]['mean_x'] = np.mean(sizes[:, 0])
+        params[dir]['mean_y'] = np.mean(sizes[:, 1])
+        params[dir]['var_x'] = np.var(sizes[:, 0])
+        params[dir]['var_y'] = np.var(sizes[:, 1])
+        sizes = sizes[:, 0] * sizes[:, 1]
+        params[dir]['mean_size'] = np.mean(sizes)
+        params[dir]['var_size'] = np.var(sizes)
+
+    for d in params.keys():
+        print('### %s:' % d.upper())
+        for key in params[d].keys():
+            if key[:4] in ['mean', 'var_']:
+                print(' %10s: %.3f' % (key, params[d][key]))
+    return params
+
 
 if __name__ == '__main__':
     database = Database()

@@ -45,7 +45,7 @@ def main():
         return
 
     # configure verbosity
-    default = tf.logging.ERROR
+    default = tf.logging.WARN
     verbosity = max(tf.logging.DEBUG, default - args.verbose * tf.logging.DEBUG)
     tf.logging.set_verbosity(verbosity)
     log.setLevel(verbosity)

@@ -9,8 +9,7 @@ import data
 def get_estimator():
     return tf.estimator.Estimator(
         model,
-        # model_dir='models/cnn_mnistlike_dbupscale',
-        model_dir='models/xxx',
+        model_dir='models/cnn_mnistlike_grayscale_adam',
         params={},
     )
 
@@ -31,7 +30,7 @@ def model(features, labels, mode, config, params):
     # dense part
     flat = tf.layers.flatten(pool2)
     dense1 = tf.layers.dense(flat, 1024, activation=tf.nn.relu)
-    dense1_dropout = tf.layers.dropout(dense1, rate=.4, training=mode == ModeKeys.TRAIN)
+    dense1_dropout = tf.layers.dropout(dense1, rate=.6, training=mode == ModeKeys.TRAIN)
     logits = tf.layers.dense(dense1_dropout, data.Database.N_CLASSES)
 
     if mode == ModeKeys.PREDICT:
@@ -46,7 +45,7 @@ def model(features, labels, mode, config, params):
     loss = tf.losses.sparse_softmax_cross_entropy(labels, logits)
 
     if mode == ModeKeys.TRAIN:
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+        optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
         optimization = optimizer.minimize(loss, global_step=tf.train.get_or_create_global_step())
         return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=optimization)
 

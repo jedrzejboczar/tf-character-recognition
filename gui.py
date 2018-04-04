@@ -12,9 +12,9 @@ import data
 
 
 NET_IMAGE_SIZE = QSize(*data.Database.IMAGE_SIZE)
-GUI_IMAGE_SIZE = QSize(250, 250)
-PEN_WIDTH_RANGE = (1, 70)
-
+GUI_IMAGE_SIZE = QSize(350, 350)
+PEN_WIDTH_RANGE = (1, 80)
+IMAGE_RGB = False
 
 class Gui(QWidget):
     """
@@ -114,8 +114,10 @@ Probabilities:  {}
     @pyqtSlot(QImage)
     def evaluateImage(self, image):
         image = self.qimage2array(image).astype(np.float32)
-        imageRGB = image[:, :, np.newaxis].repeat(3, axis=2)
-        images = np.array([imageRGB, ])
+        image = image[:, :, np.newaxis]
+        if IMAGE_RGB:
+            image = image.repeat(3, axis=2)
+        images = np.array([image, ])
         input_fn = lambda: tf.data.Dataset.from_tensor_slices(images).batch(1)
         predictions, = self.classifier.predict(input_fn)
         self.showPredictions(predictions)
