@@ -22,7 +22,6 @@ def model(features, labels, mode, config, params):
     """
     ModeKeys = tf.estimator.ModeKeys
     images = features
-    # images = tf.Print(images, [images], message="This is a: ")
 
     # convolutional part
     conv1 = tf.layers.conv2d(images, filters=32, kernel_size=5, activation=tf.nn.relu)

@@ -3,10 +3,11 @@
 
 import os
 import string
-import logging
 import subprocess
 import numpy as np
 import tensorflow as tf
+
+import log
 
 LABELS = '0123456789' + string.ascii_uppercase + string.ascii_lowercase
 
@@ -18,7 +19,7 @@ class AbstractDatasetLoader:
     def __init__(self):
         this_dir = os.path.dirname(os.path.abspath(os.path.realpath(__file__)))
         self.database_dir = os.path.join(this_dir)
-        self.logger = logging.getLogger('dataset_loaders')
+        self.logger = log.getLogger('dataset_loaders')
 
     def get_train_dataset(self):
         # should return tf.data.Dataset of tuples (filepath, label)

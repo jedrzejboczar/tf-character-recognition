@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import logging
 
 import cv2
 import numpy as np
 import tensorflow as tf
 
+import log
 import database.loaders
 
 
@@ -33,7 +33,7 @@ class Database:
 
     def __init__(self, num_parallel_calls=3):
         self.n_parallel = num_parallel_calls
-        self.logger = logging.getLogger('database')
+        self.logger = log.getLogger('database')
         self.loaders = list(self.DATASETS.values())
 
     def get_train_dataset(self):
