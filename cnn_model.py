@@ -9,7 +9,7 @@ import data
 def get_estimator():
     return tf.estimator.Estimator(
         model,
-        model_dir='models/cnn_v1_1',
+        model_dir='models/cnn_v2_1',
         params={},
     )
 
@@ -29,14 +29,13 @@ def model(features, labels, mode, config, params):
     net = tf.layers.conv2d(net, filters=64, kernel_size=5, activation=tf.nn.relu)  # [18, 18, 64]
     # 1x1 convolution
     net = tf.layers.conv2d(net, filters=16, kernel_size=1, activation=tf.nn.relu)  # [18, 18, 16]
-    net = tf.layers.dropout(net, rate=.4, training=mode == ModeKeys.TRAIN)
     net = tf.layers.max_pooling2d(net, 3, 3)  # [6, 6, 16]
     net = tf.layers.conv2d(net, filters=64, kernel_size=3, activation=tf.nn.relu)  # [4, 4, 64]
     # dense part
     net = tf.layers.flatten(net)  # [1024]
-    net = tf.layers.dropout(net, rate=.2, training=mode == ModeKeys.TRAIN)
+    net = tf.layers.dropout(net, rate=.7, training=mode == ModeKeys.TRAIN)
     net = tf.layers.dense(net, 768, activation=tf.nn.relu)  # [768]
-    net = tf.layers.dropout(net, rate=.6, training=mode == ModeKeys.TRAIN)
+    net = tf.layers.dropout(net, rate=.7, training=mode == ModeKeys.TRAIN)
     net = tf.layers.dense(net, data.Database.N_CLASSES)
     logits = net
 

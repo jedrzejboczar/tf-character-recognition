@@ -28,7 +28,8 @@ class Database:
     N_CLASSES = len(CLASSES)
     IMAGE_SIZE = (50, 50)
     DATASETS = {
-        'Char47K': database.loaders.Char47K(hand_upscale=10, images_upscale=3),
+        'Char47K': database.loaders.Char47K(dirs=['font', 'hand', 'img_good'],
+            hand_upscale=20, images_upscale=8),
         }
 
     def __init__(self, distortions=True, num_parallel_calls=3):
@@ -79,7 +80,7 @@ class Database:
 
     def add_distortions(self, dataset):
         """Adds distortions to the dataset (each element should be (image, label))"""
-        distortions = [self.negative, self.rand_rotate]
+        distortions = [self.negative]
         self.logger.info('Applying %d distortions (this will increase the dataset that many times)')
         def flat_map_func(image, label):
             new_images = [image] + [distort(image) for distort in distortions]

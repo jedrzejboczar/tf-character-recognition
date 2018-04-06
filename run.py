@@ -3,6 +3,7 @@
 
 import os
 import sys
+import time
 import logging
 import argparse
 import tensorflow as tf
@@ -20,7 +21,7 @@ logger = log.getLogger('run_script')
 
 DEFAULTS = {
     'epochs': 1,
-    'batch-size': 100,
+    'batch-size': 60,
 }
 
 parser = argparse.ArgumentParser(description='TODO')
@@ -73,21 +74,29 @@ def main():
         return lambda : database.prepare_dataset(args.predict).batch(args.batch_size)
 
     if args.train:
-        info_epochs = lambda _from, _to: logger.info('EPOCHS %d to %d:' % (_from, _to))
+        info_epochs = lambda _from, _to: logger.info('EPOCHS from {} to {}:'.format(_from, _to))
+        info_time = lambda time, n_epochs: logger.info('Time per epoch: {:.2f} sec = {:.2f} min'.format(
+            time/n_epochs, time/n_epochs / 60))
         if args.eval_each_n:
             n_full = args.epochs // args.eval_each_n if args.eval_each_n is not None else 0
             for i in range(n_full):
                 info_epochs(i * args.eval_each_n + 1, (i+1) * args.eval_each_n)
+                start = time.time()
                 estimator.train(train_input_fn(args.eval_each_n))
+                info_time(time.time() - start, args.eval_each_n)
                 results = estimator.evaluate(eval_input_fn())
                 logger.info('Test data accuracy: %.3f' % results['accuracy'])
             remaining_epochs = args.epochs - n_full * args.eval_each_n
             if remaining_epochs > 0:
                 info_epochs(n_full * args.eval_each_n + 1, args.epochs)
+                start = time.time()
                 estimator.train(train_input_fn(remaining_epochs))
+                info_time(time.time() - start, remaining_epochs)
         else:
             info_epochs(1, args.epochs)
+            start = time.time()
             estimator.train(train_input_fn(args.epochs))
+            info_time(time.time() - start, args.epochs)
 
 
     if args.eval:
