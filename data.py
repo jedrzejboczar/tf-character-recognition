@@ -26,13 +26,14 @@ class Database:
     """
     LABELS = CLASSES = database.loaders.LABELS
     N_CLASSES = len(CLASSES)
-    IMAGE_SIZE = (28, 28)
+    IMAGE_SIZE = (50, 50)
     DATASETS = {
         'Char47K': database.loaders.Char47K(hand_upscale=10, images_upscale=3),
         }
 
-    def __init__(self, num_parallel_calls=3):
+    def __init__(self, distortions=True, num_parallel_calls=3):
         self.n_parallel = num_parallel_calls
+        self.distortions = distortions
         self.logger = log.getLogger('database')
         self.loaders = list(self.DATASETS.values())
 
@@ -55,6 +56,9 @@ class Database:
             dataset = dataset.shuffle(100000, reshuffle_each_iteration=False).cache()
         # load images
         dataset = dataset.map(_on_first(self.load_image), num_parallel_calls=self.n_parallel)
+        # add distortions
+        if self.distortions:
+            dataset = dataset.apply(self.add_distortions)
         # for now leave rest of operations for others, e.g.:
         #   .cache().shuffle(small_buffer).batch(size).repeat(epochs).prefetch(1)
         #   or without .cache as it will take much RAM because caching whole images
@@ -73,6 +77,16 @@ class Database:
         dataset = tf.data.Dataset.from_tensor_slices(data)
         return dataset.map(_on_first(self.load_image), num_parallel_calls=self.n_parallel)
 
+    def add_distortions(self, dataset):
+        """Adds distortions to the dataset (each element should be (image, label))"""
+        distortions = [self.negative, self.rand_rotate]
+        self.logger.info('Applying %d distortions (this will increase the dataset that many times)')
+        def flat_map_func(image, label):
+            new_images = [image] + [distort(image) for distort in distortions]
+            return tf.data.Dataset.from_tensor_slices((new_images, tf.tile([label], [len(new_images)])))
+        dataset = dataset.interleave(flat_map_func, cycle_length=1)
+        return dataset
+
     def load_image(self, filepath):
         """Reads image and resizes it. Pixel values are float32 from 0 256."""
         image_bytes = tf.read_file(filepath)
@@ -80,6 +94,16 @@ class Database:
         image = tf.image.decode_png(image_bytes, channels=1)
         image = tf.image.resize_images(image, self.IMAGE_SIZE)
         return image
+
+    def negative(self, image):
+        return tf.constant(255.0) - image
+
+    def rand_rotate(self, image):
+        # rotate only by 90 or 270 (no upside-down images); n in {1, 3}
+        # [0, 1] * 2 = [0, 2] + 1 = [1, 3]
+        n_times_90 = tf.random_uniform([], minval=0, maxval=1+1, dtype=tf.int32) * 2 + 1
+        return  tf.image.rot90(image, n_times_90)
+
 
 ################################################################################
 
@@ -144,6 +168,7 @@ if __name__ == '__main__':
     while i < N:
         try:
             image, label = sess.run(next_el)
+            print('label', database.LABELS[label], end='\r')
             cv2.imshow('image', image/256)
             if cv2.waitKey(0) in [27, ord('q')]: # 'ESCAPE' or 'q'
                 break
