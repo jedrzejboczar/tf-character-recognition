@@ -65,7 +65,7 @@ def main():
 
     def train_input_fn(repeats):
         return lambda : database.get_train_dataset().shuffle(10000).batch(
-            args.batch_size).repeat(repeats).prefetch(1)
+            args.batch_size).repeat(repeats).prefetch(3)
 
     def eval_input_fn():
         return lambda : database.get_test_dataset().batch(args.batch_size).prefetch(1)
@@ -97,7 +97,6 @@ def main():
             start = time.time()
             estimator.train(train_input_fn(args.epochs))
             info_time(time.time() - start, args.epochs)
-
 
     if args.eval:
         results = estimator.evaluate(eval_input_fn())

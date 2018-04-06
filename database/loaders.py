@@ -38,7 +38,7 @@ class Char47K(AbstractDatasetLoader):
         hand - images drawn on tablet           (900x1200x3)
         img_good - photos of different sizes    (from 6x16x3 to 391x539x3)
         img_bad - photos with worse quality     (from 11x7x3 to 464x325x3)
-    It contains 78905 PNG images (font:hand:igood:ibad - 62992:3410:4798:7705).
+    It contains 78905 PNG images (font:hand:igood:ibad - 62992:3410:7705:4798).
     To make the number of hand-drawn and real images comparable to font-generated
     ones, it is possible to set images upscaling for training data, which results
     in adding these images 'xxx_upscale' times.

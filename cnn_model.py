@@ -9,7 +9,7 @@ import data
 def get_estimator():
     return tf.estimator.Estimator(
         model,
-        model_dir='models/cnn_v2_1',
+        model_dir='models/cnn_v0_2_50x50',
         params={},
     )
 
@@ -24,18 +24,14 @@ def model(features, labels, mode, config, params):
 
     # convolutional part (dimensions without first (batch_size))
     net = images  # [50, 50, 1]
-    net = tf.layers.conv2d(images, filters=48, kernel_size=7, activation=tf.nn.relu)  # [44, 44, 48]
-    net = tf.layers.max_pooling2d(net, 2, 2)  # [22, 22, 48]
-    net = tf.layers.conv2d(net, filters=64, kernel_size=5, activation=tf.nn.relu)  # [18, 18, 64]
-    # 1x1 convolution
-    net = tf.layers.conv2d(net, filters=16, kernel_size=1, activation=tf.nn.relu)  # [18, 18, 16]
-    net = tf.layers.max_pooling2d(net, 3, 3)  # [6, 6, 16]
-    net = tf.layers.conv2d(net, filters=64, kernel_size=3, activation=tf.nn.relu)  # [4, 4, 64]
+    net = tf.layers.conv2d(images, filters=32, kernel_size=5, activation=tf.nn.relu)  # [46, 46, 32]
+    net = tf.layers.max_pooling2d(net, 2, 2)  # [23, 23, 32]
+    net = tf.layers.conv2d(net, filters=64, kernel_size=5, activation=tf.nn.relu)  # [19, 19, 64]
+    net = tf.layers.max_pooling2d(net, 2, 2)  # [9.5?, 9.5?, 64]
     # dense part
-    net = tf.layers.flatten(net)  # [1024]
-    net = tf.layers.dropout(net, rate=.7, training=mode == ModeKeys.TRAIN)
-    net = tf.layers.dense(net, 768, activation=tf.nn.relu)  # [768]
-    net = tf.layers.dropout(net, rate=.7, training=mode == ModeKeys.TRAIN)
+    net = tf.layers.flatten(net)  # [5184 or 6400]
+    net = tf.layers.dense(net, 1024, activation=tf.nn.relu)  # [1024]
+    net = tf.layers.dropout(net, rate=.6, training=mode == ModeKeys.TRAIN)
     net = tf.layers.dense(net, data.Database.N_CLASSES)
     logits = net
 
