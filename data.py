@@ -26,7 +26,7 @@ class Database:
     """
     LABELS = CLASSES = database.loaders.LABELS
     N_CLASSES = len(CLASSES)
-    IMAGE_SIZE = (38, 38)
+    IMAGE_SIZE = (94, 94)
     DATASETS = {
         'Char47K': database.loaders.Char47K(dirs=['font', 'hand', 'img_good'],
             hand_upscale=20, images_upscale=8),

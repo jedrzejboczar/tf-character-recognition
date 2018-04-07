@@ -9,7 +9,7 @@ import data
 def get_estimator():
     return tf.estimator.Estimator(
         model,
-        model_dir='models/cnn_v8_38x38-4',
+        model_dir='models/cnn_v9_94x94',
         params={},
     )
 
@@ -26,14 +26,19 @@ def model(features, labels, mode, config, params):
         data=[tf.shape(images)], summarize=5, message='Wrong input images shape')
 
     # convolutional part (dimensions without first (batch_size))
-    net = images  # [38, 38, 1]
-    net = tf.layers.conv2d(images, filters=8, kernel_size=3, activation=tf.nn.relu)  # [36, 36, 8]
-    net = tf.layers.max_pooling2d(net, 2, 2)  # [18, 18, 8]
-    net = tf.layers.conv2d(net, filters=32, kernel_size=3, activation=tf.nn.relu)  # [16, 16, 32]
-    net = tf.layers.max_pooling2d(net, 2, 2)  # [8, 8, 32]
-    net = tf.layers.conv2d(net, filters=128, kernel_size=3, activation=tf.nn.relu)  # [6, 6, 128]
-    net = tf.layers.max_pooling2d(net, 2, 2)  # [3, 3, 128]
-    net = tf.layers.conv2d(net, filters=512, kernel_size=3, activation=tf.nn.relu)  # [1, 1, 512]
+    net = images  # [94, 94, 1]
+    net = tf.layers.conv2d(net, filters=8, kernel_size=3, activation=tf.nn.relu)  # [92, 92, 8]
+    net = tf.layers.max_pooling2d(net, 2, 2)  # [46, 46, 8]
+    net = tf.layers.conv2d(net, filters=32, kernel_size=3, activation=tf.nn.relu)  # [44, 44, 8]
+    net = tf.layers.max_pooling2d(net, 2, 2)  # [22, 22, 8]
+    net = tf.layers.conv2d(net, filters=72, kernel_size=3, activation=tf.nn.relu)  # [20, 20, 32]
+    net = tf.layers.max_pooling2d(net, 2, 2)  # [10, 10, 32]
+    net = tf.layers.conv2d(net, filters=160, kernel_size=3, activation=tf.nn.relu)  # [8, 8, 128]
+    net = tf.layers.max_pooling2d(net, 2, 2)  # [4, 4, 128]
+    net = tf.layers.conv2d(net, filters=512, kernel_size=3, activation=tf.nn.relu)  # [2, 2, 512]
+    net = tf.layers.max_pooling2d(net, 2, 2)  # [1, 1, 512]
+
+    assert net.shape[1:] == [1, 1, 512], 'Something is not yes! net.shape = %s' % net.shape
 
     # dense part
     net = tf.layers.flatten(net)  # [512]
