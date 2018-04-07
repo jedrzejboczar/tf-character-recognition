@@ -21,7 +21,7 @@ logger = log.getLogger('run_script')
 
 DEFAULTS = {
     'epochs': 1,
-    'batch-size': 60,
+    'batch-size': 40,
 }
 
 parser = argparse.ArgumentParser(description='TODO')

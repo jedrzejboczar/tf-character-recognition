@@ -4,16 +4,17 @@ import string
 import numpy as np
 import tensorflow as tf
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTextEdit, QSlider
-from PyQt5.QtGui import QPainter, QImage, QPen, QFont, QFontDatabase
+from PyQt5.QtGui import QPainter, QImage, QPen, QFont, QFontDatabase, QColor
 from PyQt5.QtCore import QSize, QRect, pyqtSignal, pyqtSlot
 from PyQt5.Qt import Qt, QSizePolicy
+import qimage2ndarray
 
 import data
 
 
 NET_IMAGE_SIZE = QSize(*data.Database.IMAGE_SIZE)
 GUI_IMAGE_SIZE = QSize(350, 350)
-PEN_WIDTH_RANGE = (1, 80)
+PEN_WIDTH_RANGE = (1, 60)
 IMAGE_RGB = False
 
 class Gui(QWidget):
@@ -113,22 +114,15 @@ Probabilities:  {}
 
     @pyqtSlot(QImage)
     def evaluateImage(self, image):
-        image = self.qimage2array(image).astype(np.float32)
-        image = image[:, :, np.newaxis]
-        if IMAGE_RGB:
-            image = image.repeat(3, axis=2)
+        image = qimage2ndarray.rgb_view(image).astype(np.float32)  # 3D array (RGB)
+        if not IMAGE_RGB:
+            # do not use this, just take one color, as they are the same in this array
+            # image = 0.2126 * image['r'] + 0.7152 * image['g'] + 0.0722 * image['b']
+            image = image[:, :, :1]
         images = np.array([image, ])
         input_fn = lambda: tf.data.Dataset.from_tensor_slices(images).batch(1)
         predictions, = self.classifier.predict(input_fn)
         self.showPredictions(predictions)
-
-    def qimage2array(self, qimage):
-        "Uses SIP interface to convert underlying C++ array to np.array."
-        qimage = qimage.convertToFormat(QImage.Format_Grayscale8)
-        ptr = qimage.constBits()  # (void *) pointer to underlying data
-        ptr.setsize(qimage.height() * qimage.width() * 1)  # uint8 has size 1
-        arr = np.array(ptr, dtype=np.uint8).reshape(qimage.height(), qimage.width())
-        return arr
 
 
 class DrawingBox(QWidget):
