@@ -1,6 +1,7 @@
 import logging
 
 __loggers = []
+__level = None
 
 class Colors:
     HEADER = '\033[95m'
@@ -17,7 +18,11 @@ class Colors:
     #     print(startString + text + endString, **kwargs)
 
 def getLogger(name):
+    global __level
+
     logger = logging.getLogger(name)
+    if __level is not None:
+        logger.setLevel(__level)
     console = logging.StreamHandler()
     fmt = logging.Formatter('{}[%(levelname)s] %(name)s (%(asctime)s) : %(message)s{}'.format(
         Colors.BOLD, Colors.ENDC))
@@ -27,5 +32,8 @@ def getLogger(name):
     return logger
 
 def setLevel(level):
+    global __level
+
+    __level = level
     for logger in __loggers:
         logger.setLevel(level)

@@ -81,7 +81,8 @@ class Database:
     def add_distortions(self, dataset):
         """Adds distortions to the dataset (each element should be (image, label))"""
         distortions = [self.negative]
-        self.logger.info('Applying %d distortions (this will increase the dataset that many times)')
+        self.logger.info(
+            'Applying %d distortions (this will increase the dataset that many times)' % len(distortions))
         def flat_map_func(image, label):
             new_images = [image] + [distort(image) for distort in distortions]
             return tf.data.Dataset.from_tensor_slices((new_images, tf.tile([label], [len(new_images)])))
