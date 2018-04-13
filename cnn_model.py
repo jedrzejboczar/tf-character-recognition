@@ -1,15 +1,35 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import cv2
+import scipy.signal
 import numpy as np
 import tensorflow as tf
 
 import log
 import data
+import cv2_show
 
 
 ModeKeys = tf.estimator.ModeKeys  # shorter
+
+
+# def cv2_show.show_image(image, wait=True):
+#     """Shows given image using OpenCV.
+#
+#     'image' - image with float values from 0 to 255 (as Model operates on such)
+#     'wait' - if True waits forever, if False waits 1ms, else waits 'wait' ms
+#     return - True if ESCAPE or 'q' key was pressed else False
+#     """
+#     image = np.asarray(image)
+#     assert image.dtype in [np.float32, np.float64], 'Image is not floating point'
+#     cv2.imshow('image', image / 255)  # openCV wants floats in [0, 1]
+#     wait_ms = (0 if wait else 1) if isinstance(wait, bool) else wait
+#     return not cv2.waitKey(wait_ms) in [27, ord('q')] # 'ESCAPE' or 'q'
+
+def gaussian_kernel(size, sigma):
+    kernel_1d = scipy.signal.gaussian(size, sigma)
+    kernel = np.outer(kernel_1d, kernel_1d)
+    return kernel / kernel.sum()
 
 
 class Model:
@@ -52,29 +72,44 @@ class Model:
             **kwargs,
         )
 
-    def model_fn(self, features, labels, mode, config=None, params={}):
-        # features - batch of 1-channel images, float32, 0-255
-        images = features
-        assert images.shape[1:3] == data.Database.IMAGE_SIZE, \
-            'Something is not yes! Wrong images.shape = %s' % images.shape
-
-        # assemble model output from all layers
+    def build_model(self, input, is_training=False):
+        """Creates model output (logits) for given input based on model layers."""
+        # batch of 1-channel images, float32, 0-255
+        assert input.shape[1:3] == data.Database.IMAGE_SIZE, \
+            'Something is not yes! Wrong input.shape = %s' % input.shape
         self.logger.info('Building model...')
-        net = images
+        self.logger.info('   %s' % input.shape)
         self.intermediate_outputs = []
-        self.logger.info('   %s' % net.shape)
+        output = input
         for layer in self.layers:
             # for dropout we have to specify if it is training mode
             if isinstance(layer, tf.layers.Dropout):
-                net = layer(net, training=mode == ModeKeys.TRAIN)
+                output = layer(output, training=is_training)
             else:
-                net = layer(net)
+                output = layer(output)
             # save outputs of each layer
-            self.intermediate_outputs.append(net)
-            self.logger.info('   %s' % net.shape)
+            self.intermediate_outputs.append(output)
+            self.logger.info('   %s' % output.shape)
+        return output
+
+    def init_from_checkpoint(self):
+        """Loads weights for each layer from last checkpoint.
+        Needed only when not using tf.estimator.Estimator."""
+        assignment_map = {}
+        for layer in self.layers:
+            for var in layer.variables:
+                var_scope = var.name.split('/')[0]
+                assignment_map['%s/' % var_scope] = '%s/' % var_scope
+        # initialize all layers with weights from last checkpoint
+        tf.train.init_from_checkpoint(self.model_dir, assignment_map)
+
+    def model_fn(self, features, labels, mode, config=None, params={}):
+        """Model function for tf.estimator.Estimator"""
+        # assemble model output from all layers
+        images = features   # batch of 1-channel images, float32, 0-255
+        logits = self.build_model(images, is_training=mode == ModeKeys.TRAIN)
 
         # outputs (loss is computed if not in predict mode)
-        logits = net
         probabilities = tf.nn.softmax(logits)
         loss_fn = lambda : tf.losses.sparse_softmax_cross_entropy(labels, logits)
 
@@ -115,16 +150,6 @@ class Model:
             conv2ds from 2 to 4, filters from 1 to 9
             'Conv2D 2:4 1:9'
         """
-        # convenience function
-        def show_image(name, img):
-            cv2.imshow(name, img)
-            return not cv2.waitKey(0) in [27, ord('q')] # 'ESCAPE' or 'q'
-
-        def best_grid(N):
-            rows = np.floor(np.sqrt(N)) # floor => take less rows than columns
-            cols = np.ceil(N / rows)    # take so many cols to fit all elements
-            return int(rows), int(cols)
-
         # as for now only for 1 image
         params = {'store_intermediate': True, 'store_images': True}
         predictions = self.get_estimator(params=params).predict(predict_input_fn)
@@ -132,39 +157,97 @@ class Model:
         # CNN-like layers
         for prediction in predictions:
             self.logger.info('Showing input image')
-            show_image('image', prediction['images'])
+            cv2_show.show_image(prediction['images'])
             for i, layer in enumerate(self.layers):
                 if isinstance(layer, tf.layers.Conv2D):
                     name = layer.__class__.__name__
                     filters = prediction[i]
                     n_filters = filters.shape[-1]
                     self.logger.info('Showing layer %s nr %d - %d filters' % (name, i+1, n_filters))
-                    # create one big image from filter outputs
-                    padding = 2
-                    n_rows, n_cols = best_grid(n_filters)
-                    im_height, im_width = filters.shape[:2]
-                    image = 0.3 * np.ones([n_rows * im_height + (n_rows+1) * padding,
-                        n_cols * im_width + (n_cols+1) * padding])
-                    for row in range(n_rows):
-                        for col in range(n_cols):
-                            n = row * n_cols + col
-                            if n >= n_filters:
-                                continue
-                            # find the right index ranges in the 'image' matrix
-                            base_height = (row+1) * padding + row * im_height
-                            base_width = (col+1) * padding + col * im_width
-                            slice_h = slice(base_height, base_height + im_height)
-                            slice_w = slice(base_width, base_width + im_width)
-                            # normalize filter values to see activations
-                            filter = filters[:, :, n]
-                            eps = 1e-6
-                            filter = filter / (np.max(filter) + eps) * 255
-                            # insert filter image at its position
-                            image[slice_h, slice_w] = filter
-                    # increase image size to be visible
-                    desired_rows = 500
-                    scaling = desired_rows / image.shape[0]
-                    image = cv2.resize(image, None, fx=scaling, fy=scaling, interpolation=cv2.INTER_NEAREST)
-                    to_continue = show_image('image', image)
-                    if not to_continue:
-                        break
+                    images = np.rollaxis(filters, 2)  # move the last axis to the first one
+                    to_continue = cv2_show.show_images_grid(images, normalize=True)
+
+    def create_filter_visualizations(self, initial_image=None):
+        if initial_image is not None:
+            initial_images = initial_image.reshape([-1, *data.Database.IMAGE_SIZE, 1])
+        else:
+            initial_images = np.random.rand(1, *data.Database.IMAGE_SIZE, 1) * 255
+        # create variable for the images to be optimized
+        images = tf.Variable(initial_value=initial_images, name='optimized_image',
+            dtype=tf.float32, constraint=lambda img: tf.clip_by_value(img, 0, 255))
+
+        logits = self.build_model(images)
+        layer_filters = self.intermediate_outputs[0]
+        n_filters = layer_filters.shape[-1]
+        opt_images = np.zeros([n_filters, *data.Database.IMAGE_SIZE, 1])
+
+
+        for i in range(n_filters):
+            loss_fn = lambda : -1 * tf.reduce_sum(layer_filters[:, :, :, i])
+            optimization_op = self._optimize_image(loss_fn, images)
+
+            self.init_from_checkpoint()
+            init_op = tf.global_variables_initializer()
+
+            with tf.Session() as sess:
+                sess.run(init_op)
+                sess.run(optimization_op)
+
+                opt_image = sess.run(images)[0]
+                opt_images[i, :, :, :] = opt_image
+
+        for i in range(n_filters):
+            cv2_show.show_image(opt_images[i, :, :, :])
+
+    def _optimize_image(self, loss_fn, images, blur=3, blur_sigma=3, show_img=True, show_rate=20):
+        """Optimizes the image (random if not specified) to minimize given loss function"""
+        # define the optimizer
+        learning_rate = 1
+        # as blurring is done through apply_gradients, it has to be simple GradientDescent
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+
+        # gaussian kernel for blurring
+        if blur is not None:
+            kernel = gaussian_kernel(size=blur, sigma=blur_sigma)
+            kernel = tf.constant(kernel.reshape([*kernel.shape, 1, 1]), dtype=tf.float32)
+            blurred = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], 'SAME')
+            blur_op = tf.assign(images, blurred)
+
+        # loop conditions
+        num_steps = 5000
+        blur_each = num_steps // 10
+
+        # image display
+        def show_image_wrapper(images):
+            cv2_show.show_image(images[0], wait=False)
+            return np.empty(0, dtype=np.float32)  # return anything
+
+        # optimization loop
+        optimize_cond = lambda i, last_time: i < num_steps
+        def optimize_body(i, last_time):
+            loss = loss_fn()
+            (gradient, variable), = optimizer.compute_gradients(loss, var_list=[images])
+            blur_diff = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], 'SAME') - images
+            gradient = tf.cond(tf.equal(i % blur_each, 0),
+                lambda : gradient - blur_diff / learning_rate, # gradient is subtracted so blur_diff must be negative
+                lambda : gradient)
+            optimization = optimizer.apply_gradients([(gradient, variable)],
+                global_step=tf.train.get_or_create_global_step())
+            # image display time computations
+            time_delta = tf.timestamp() - last_time
+            was_long_enough = tf.greater(time_delta, 1/show_rate)
+            show_image_op = tf.cond(was_long_enough,
+                lambda : tf.py_func(show_image_wrapper, [images], tf.float32),
+                lambda : tf.constant(0, dtype=tf.float32))
+            with tf.control_dependencies([optimization]):
+                if show_img:
+                    with tf.control_dependencies([show_image_op]):
+                        new_time = tf.cond(was_long_enough,
+                            lambda : tf.timestamp(),  # if showed image, then update
+                            lambda : last_time)       # else leave last_time as was
+                        return i + 1, new_time
+                else:
+                    return i + 1, last_time
+        optimize_op = tf.while_loop(optimize_cond, optimize_body, loop_vars=[tf.constant(0), tf.timestamp()])
+
+        return optimize_op

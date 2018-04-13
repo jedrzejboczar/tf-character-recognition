@@ -43,13 +43,39 @@ parser.add_argument('-S', '--show', nargs='+', metavar='IMG_FILE',
     help='Show intermediate outputs for given image')
 parser.add_argument('-G', '--gui', action='store_true',
     help='Run interactive prediction GUI (discards other options)')
+parser.add_argument('-D', '--development-main', action='store_true',
+    help='run special main (development specific)')
+
+
+def development_main(model, database, estimator):
+    import cv2
+    import numpy as np
+    image = cv2.imread('database/chars74k/hand/test/S/img029-022.png')[:, :, 0].astype(np.float32)
+    image = cv2.resize(image, database.IMAGE_SIZE)
+    # model.create_filter_visualizations(image)
+    model.create_filter_visualizations()
+
+    # def show_image(name, img, wait=0):
+    #     cv2.imshow(name, img)
+    #     return not cv2.waitKey(wait) in [27, ord('q')] # 'ESCAPE' or 'q'
+    #
+    # image = cv2.imread('database/chars74k/hand/test/S/img029-022.png')[:, :, 0].astype(np.float32)
+    # image = cv2.resize(image, database.IMAGE_SIZE)
+    # image = np.random.rand(*image.shape) * 255
+    # show_image('image', image/255, wait=0)
+    # print(np.min(image), np.max(image))
+    #
+    # # output = model.optimize_image(np.random.rand(*database.IMAGE_SIZE)*255)
+    # output = model.optimize_image(image)
+    #
+    # print('Optimization finished')
+    # show_image('image', output/255)
+    #
+    # cv2.imwrite('/tmp/image.png', output)
 
 
 def main():
     args = parser.parse_args()
-    if not (args.train or args.eval or args.predict or args.gui):
-        logger.warn('No action specified (see --help).')
-        # return
 
     # configure verbosity
     default = tf.logging.WARN
@@ -71,7 +97,7 @@ def main():
             args.batch_size).repeat(repeats).prefetch(3)
 
     def eval_input_fn():
-        return lambda : database.get_test_dataset().batch(args.batch_size).prefetch(1)
+        return lambda : database.get_test_dataset().batch(args.batch_size).prefetch(3)
 
     def predict_input_fn(files):
         return lambda : database.from_files(files).batch(args.batch_size)
@@ -124,6 +150,8 @@ def main():
     if args.show:
         model.show_layers_outputs(predict_input_fn(args.show))
 
+    if args.development_main:
+        development_main(model, database, estimator)
 
 
 if __name__ == '__main__':
