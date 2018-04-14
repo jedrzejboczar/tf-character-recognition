@@ -98,6 +98,30 @@ class Model:
         # initialize all layers with weights from last checkpoint
         tf.train.init_from_checkpoint(self.model_dir, assignment_map)
 
+    def add_histogram_summaries(self):
+        """Adds histograms for all layers (weights, biases, outputs/activations)."""
+        assert len(self.intermediate_outputs) == len(self.layers), 'Model not built (run build_model() first)'
+        def clean(name, layer_n): # add "_0" if layer is not numbered (to have right ordering)
+            if not re.match(r'^.+_\d+$', name.split('/')[0]):
+                name_split = name.split('/')
+                name_split[0] += '_0'
+                name = '/'.join(name_split)
+            return ('l%d_' % layer_n) + name.replace(':', '_')
+        histograms = []
+        for i, (layer, output) in enumerate(zip(self.layers, self.intermediate_outputs)):
+            for weight in layer.weights: # biases and weights
+                histograms.append((clean(weight.name, i), weight))
+            histograms.append((clean(output.name, i), output))  # post-activation output
+            try:  # try adding the pre-activation outputs (if exist)
+                pre_activation_op_name = '/'.join(output.name.split('/')[:-1]) + '/BiasAdd'
+                pre_activation, = output.graph.get_operation_by_name(pre_activation_op_name).outputs
+                histograms.append((clean(pre_activation.name, i), pre_activation))
+            except KeyError:
+                pass
+        for name, values in histograms:
+            tf.summary.histogram(name, values)
+            self.logger.debug('Adding histogram summary: %s' % name)
+
     def get_estimator(self, **kwargs):
         """Creates an instance of tf.estimator.Estimator for the model.
 
@@ -120,16 +144,8 @@ class Model:
         loss_fn = lambda : tf.losses.sparse_softmax_cross_entropy(labels, logits)
 
         # create summaries
-        if params.get('add_summaries', True):
-            for layer in self.layers:
-                for weight in layer.weights:
-                    # add "_0" if layer is not numbered (to have right ordering)
-                    name = weight.name
-                    if not re.match(r'^.+_\d+$', name.split('/')[0]):
-                        name_split = name.split('/')
-                        name_split[0] += '_0'
-                        name = '/'.join(name_split)
-                    tf.summary.histogram(name, weight)
+        if params.get('summary_histograms', True):
+            self.add_histogram_summaries()
 
         # create EstimatorSpecs depending on mode
         if mode == ModeKeys.PREDICT:
