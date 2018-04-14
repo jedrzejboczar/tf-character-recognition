@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import re
 import scipy.signal
 import numpy as np
 import tensorflow as tf
@@ -41,6 +42,11 @@ class Model:
         self.logger = log.getLogger('model')
         self.model_dir = 'models/cnn_v9_94x94'
         self.optimizer = tf.train.AdamOptimizer(learning_rate=0.0002)
+        self.intermediate_outputs = []
+
+    def create_layers(self):
+        """This is the definition of model layers.
+        It is a function as each layer can be called only once (when building model)."""
         self.layers = [
             # Convolutional part
             tf.layers.Conv2D(filters=8, kernel_size=3, activation=tf.nn.relu),   # [92, 92, 8]
@@ -59,18 +65,6 @@ class Model:
             tf.layers.Dropout(rate=.8),
             tf.layers.Dense(units=data.Database.N_CLASSES),
         ]
-        self.intermediate_outputs = []
-
-    def get_estimator(self, **kwargs):
-        """Creates an instance of tf.estimator.Estimator for the model.
-
-        If given, passes all keyword arguments to its constructor, else
-        it uses model's default values."""
-        return tf.estimator.Estimator(
-            self.model_fn,
-            model_dir=kwargs.get('model_dir', self.model_dir),
-            **kwargs,
-        )
 
     def build_model(self, input, is_training=False):
         """Creates model output (logits) for given input based on model layers."""
@@ -80,6 +74,7 @@ class Model:
         self.logger.info('Building model...')
         self.logger.info('   %s' % input.shape)
         self.intermediate_outputs = []
+        self.create_layers()
         output = input
         for layer in self.layers:
             # for dropout we have to specify if it is training mode
@@ -103,6 +98,17 @@ class Model:
         # initialize all layers with weights from last checkpoint
         tf.train.init_from_checkpoint(self.model_dir, assignment_map)
 
+    def get_estimator(self, **kwargs):
+        """Creates an instance of tf.estimator.Estimator for the model.
+
+        If given, passes all keyword arguments to its constructor, else
+        it uses model's default values."""
+        return tf.estimator.Estimator(
+            self.model_fn,
+            model_dir=kwargs.get('model_dir', self.model_dir),
+            **kwargs,
+        )
+
     def model_fn(self, features, labels, mode, config=None, params={}):
         """Model function for tf.estimator.Estimator"""
         # assemble model output from all layers
@@ -112,6 +118,18 @@ class Model:
         # outputs (loss is computed if not in predict mode)
         probabilities = tf.nn.softmax(logits)
         loss_fn = lambda : tf.losses.sparse_softmax_cross_entropy(labels, logits)
+
+        # create summaries
+        if params.get('add_summaries', True):
+            for layer in self.layers:
+                for weight in layer.weights:
+                    # add "_0" if layer is not numbered (to have right ordering)
+                    name = weight.name
+                    if not re.match(r'^.+_\d+$', name.split('/')[0]):
+                        name_split = name.split('/')
+                        name_split[0] += '_0'
+                        name = '/'.join(name_split)
+                    tf.summary.histogram(name, weight)
 
         # create EstimatorSpecs depending on mode
         if mode == ModeKeys.PREDICT:
