@@ -13,20 +13,6 @@ import cv2_show
 
 ModeKeys = tf.estimator.ModeKeys  # shorter
 
-
-# def cv2_show.show_image(image, wait=True):
-#     """Shows given image using OpenCV.
-#
-#     'image' - image with float values from 0 to 255 (as Model operates on such)
-#     'wait' - if True waits forever, if False waits 1ms, else waits 'wait' ms
-#     return - True if ESCAPE or 'q' key was pressed else False
-#     """
-#     image = np.asarray(image)
-#     assert image.dtype in [np.float32, np.float64], 'Image is not floating point'
-#     cv2.imshow('image', image / 255)  # openCV wants floats in [0, 1]
-#     wait_ms = (0 if wait else 1) if isinstance(wait, bool) else wait
-#     return not cv2.waitKey(wait_ms) in [27, ord('q')] # 'ESCAPE' or 'q'
-
 def gaussian_kernel(size, sigma):
     kernel_1d = scipy.signal.gaussian(size, sigma)
     kernel = np.outer(kernel_1d, kernel_1d)
@@ -71,10 +57,11 @@ class Model:
         # batch of 1-channel images, float32, 0-255
         assert input.shape[1:3] == data.Database.IMAGE_SIZE, \
             'Something is not yes! Wrong input.shape = %s' % input.shape
+        info = lambda name, shape: self.logger.info('  %16s -> %s' % (name, shape))
         self.logger.info('Building model...')
-        self.logger.info('   %s' % input.shape)
         self.intermediate_outputs = []
         self.create_layers()
+        info('input images', input.shape)
         output = input
         for layer in self.layers:
             # for dropout we have to specify if it is training mode
@@ -84,7 +71,7 @@ class Model:
                 output = layer(output)
             # save outputs of each layer
             self.intermediate_outputs.append(output)
-            self.logger.info('   %s' % output.shape)
+            info(layer.name, output.shape)
         return output
 
     def init_from_checkpoint(self):
@@ -173,33 +160,33 @@ class Model:
             'accuracy': tf.metrics.accuracy(labels, predictions=tf.argmax(logits, axis=1)), }
         return tf.estimator.EstimatorSpec(mode, loss=loss, eval_metric_ops=metrics)
 
-    def show_layers_outputs(self, predict_input_fn):
-        """Shows outputs of intermediate layers according to specified filters
-
-        Format of 'filter_string':
-            <class_name> <nth_layer_of_that_type> <ith_filter> ...
-        examples:
-            1st conv2d, 3rd filter; 2nd conv2d, 3rd filter; 2nd max_pool2d, 3rd filter
-            'Conv2D 1 3 Conv2D 2 3 MaxPooling2D 2 3'
-            conv2ds from 2 to 4, filters from 1 to 9
-            'Conv2D 2:4 1:9'
-        """
+    def visualize_activations(self, predict_input_fn):
+        """Show outputs of intermediate layers for data from predict_input_fn()"""
         # as for now only for 1 image
         params = {'store_intermediate': True, 'store_images': True}
         predictions = self.get_estimator(params=params).predict(predict_input_fn)
-
-        # CNN-like layers
         for prediction in predictions:
             self.logger.info('Showing input image')
-            cv2_show.show_image(prediction['images'])
+            cv2_show.show_image(prediction['images'], resize_to_fit=True)
             for i, layer in enumerate(self.layers):
-                if isinstance(layer, tf.layers.Conv2D):
-                    name = layer.__class__.__name__
+                to_continue = True
+                # CNN-like layers
+                if isinstance(layer, (tf.layers.Conv2D, tf.layers.MaxPooling2D)):
                     filters = prediction[i]
                     n_filters = filters.shape[-1]
-                    self.logger.info('Showing layer %s nr %d - %d filters' % (name, i+1, n_filters))
+                    self.logger.info('Showing layer %s - %d filters' % (layer.name, n_filters))
                     images = np.rollaxis(filters, 2)  # move the last axis to the first one
-                    to_continue = cv2_show.show_images_grid(images, normalize=True)
+                    to_continue = cv2_show.show_images_grid(images, normalize=True, visualize_negative=True)
+                # dense layers (1D)
+                elif isinstance(layer, tf.layers.Dense):
+                    activations = prediction[i]
+                    self.logger.info('Showing layer %s - %d values (reshaped into grid)' \
+                        % (layer.name, activations.shape[0]))
+                    images = activations[:, None, None]
+                    # totally inefficient, but here it is really not needed
+                    to_continue = cv2_show.show_images_grid(images, normalize=True, visualize_negative=True)
+                if not to_continue:
+                    break
 
     def create_filter_visualizations(self, initial_image=None):
         if initial_image is not None:

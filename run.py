@@ -148,7 +148,7 @@ def main():
                 nlen=max_filename_len, lab=label, prob=probability * 100))
 
     if args.show:
-        model.show_layers_outputs(predict_input_fn(args.show))
+        model.visualize_activations(predict_input_fn(args.show))
 
     if args.development_main:
         development_main(model, database, estimator)
