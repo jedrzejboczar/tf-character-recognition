@@ -53,7 +53,7 @@ def development_main(model, database, estimator):
     image = cv2.imread('database/chars74k/hand/test/S/img029-022.png')[:, :, 0].astype(np.float32)
     image = cv2.resize(image, database.IMAGE_SIZE)
     # model.create_filter_visualizations(image)
-    model.create_filter_visualizations()
+    model.create_filter_visualizations(0)
 
     # def show_image(name, img, wait=0):
     #     cv2.imshow(name, img)

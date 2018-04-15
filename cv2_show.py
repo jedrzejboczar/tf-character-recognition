@@ -63,7 +63,8 @@ def show_images_grid(images, wait=True, padding=1, resize_to_fit=True, normalize
     return - True if ESCAPE or 'q' key was pressed else False
     """
     images = np.asarray(images)
-    assert images.ndim == 3, 'Images - wrong ndim (shape = %s)' % images.shape
+    assert images.ndim in [3, 4], 'Images - wrong ndim (shape = %s)' % images.shape
+    images = images.squeeze(axis=-1)  # remove channels axis
     n_images = images.shape[0]
     # create one big image from filter outputs
     n_rows, n_cols = best_grid(n_images)
