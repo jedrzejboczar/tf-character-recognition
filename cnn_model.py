@@ -412,15 +412,35 @@ class Autoencoder:
         upscaled = tf.image.resize_images(input, [new_height, new_width], method)
         return upscaled
 
-    def walk_latent_space(self, start_image, end_image, n_points):
+    def walk_latent_space(self, path_intermediate_images, n_per_step):
+        """Generates images on the path by linear interpolations between path points."""
         # find points in the latent space
-        encoded = self.build_encoder(tf.stack([start_image, end_image]))
-        start_point, end_point = encoded[0], encoded[1]
+        path_intermediate_points = self.build_encoder(tf.stack(path_intermediate_images))
         # create linear interpolation of path
-        distance = end_point - start_point
-        path = tf.stack([start_point + i/n_points * distance for i in range(n_points + 1)])
+        path = []
+        for i in range(path_intermediate_points.shape[0] - 1):
+            start_point = path_intermediate_points[i]
+            end_point = path_intermediate_points[i + 1]
+            distance = end_point - start_point
+            path.extend([start_point + j/n_per_step * distance for j in range(n_per_step + 1)])
+        # put images into batches (to avoid problems with memory)
+        path = tf.data.Dataset.from_tensor_slices(tf.stack(path))
+        path = path.batch(n_per_step).prefetch(1)
+        # create the iterator
+        path_iterator = path.make_initializable_iterator()
+        next_path_batch = path_iterator.get_next()
         # create image representations of points in the path
-        decoded = self.build_decoder(path)
+        decoded_batch = self.build_decoder(next_path_batch)
         # overwrite initialization of weights with trained ones
         self.init_from_checkpoint()
-        return decoded
+        with tf.Session() as sess:
+            # initializations
+            sess.run(tf.global_variables_initializer())
+            sess.run(path_iterator.initializer)
+            # iterate over data yielding batches
+            while True:
+                try:
+                    images = sess.run(decoded_batch)
+                    yield images
+                except tf.errors.OutOfRangeError:
+                    break
