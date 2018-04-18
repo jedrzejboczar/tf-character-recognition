@@ -28,8 +28,8 @@ class Model:
     """
     def __init__(self):
         self.logger = log.getLogger('model')
-        self.model_dir = 'models/cnn_v9_94x94'
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.0002)
+        self.model_dir = 'models/cnn_v13_94x94'
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.0005)
         self.intermediate_outputs = []
 
     def create_layers(self):
@@ -39,17 +39,17 @@ class Model:
             # Convolutional part
             tf.layers.Conv2D(filters=8, kernel_size=3, activation=tf.nn.relu),   # [92, 92, 8]
             tf.layers.MaxPooling2D(pool_size=2, strides=2),                      # [46, 46, 8]
-            tf.layers.Conv2D(filters=32, kernel_size=3, activation=tf.nn.relu),  # [44, 44, 8]
+            tf.layers.SeparableConv2D(filters=32, kernel_size=3, activation=tf.nn.relu),  # [44, 44, 8]
             tf.layers.MaxPooling2D(pool_size=2, strides=2),                      # [22, 22, 8]
-            tf.layers.Conv2D(filters=72, kernel_size=3, activation=tf.nn.relu),  # [20, 20, 32]
+            tf.layers.SeparableConv2D(filters=72, kernel_size=3, activation=tf.nn.relu),  # [20, 20, 32]
             tf.layers.MaxPooling2D(pool_size=2, strides=2),                      # [10, 10, 32]
-            tf.layers.Conv2D(filters=160, kernel_size=3, activation=tf.nn.relu), # [8, 8, 128]
+            tf.layers.SeparableConv2D(filters=160, kernel_size=3, activation=tf.nn.relu), # [8, 8, 128]
             tf.layers.MaxPooling2D(pool_size=2, strides=2),                      # [4, 4, 128]
-            tf.layers.Conv2D(filters=512, kernel_size=3, activation=tf.nn.relu), # [2, 2, 512]
+            tf.layers.SeparableConv2D(filters=512, kernel_size=3, activation=tf.nn.relu), # [2, 2, 512]
             tf.layers.MaxPooling2D(pool_size=2, strides=2),                      # [1, 1, 512]
             # Dense part
             tf.layers.Flatten(),                                                 # [512]
-            tf.layers.Dense(units=1024, activation=tf.nn.relu),                  # [1024]
+            tf.layers.Dense(units=178, activation=tf.nn.relu),                  # [178]
             tf.layers.Dropout(rate=.8),
             tf.layers.Dense(units=data.Database.N_CLASSES),
         ]
@@ -59,12 +59,13 @@ class Model:
         # batch of 1-channel images, float32, 0-255
         assert input.shape[1:3] == data.Database.IMAGE_SIZE, \
             'Something is not yes! Wrong input.shape = %s' % input.shape
-        info = lambda name, shape: self.logger.info('  %16s -> %s' % (name, shape))
+        info = lambda name, shape, n_train: \
+            self.logger.info('  %20s -> %18s #%d' % (name, shape, n_train))
         self.logger.info('Building model...')
         self.intermediate_outputs = []
         if build_layers:
             self.create_layers()
-        info('input images', input.shape)
+        info('input images', input.shape, 0)
         output = input
         for layer in self.layers:
             # for dropout we have to specify if it is training mode
@@ -74,7 +75,11 @@ class Model:
                 output = layer(output)
             # save outputs of each layer
             self.intermediate_outputs.append(output)
-            info(layer.name, output.shape)
+            n_trainable = sum(w.shape.num_elements() for w in layer.weights)
+            info(layer.name, output.shape, n_trainable)
+        # count number of model parameters
+        n = sum(w.shape.num_elements() for l in self.layers for w in l.weights)
+        self.logger.info('total number of trainable parameters is #%d' % n)
         return output
 
     def init_from_checkpoint(self):
@@ -128,15 +133,12 @@ class Model:
         # assemble model output from all layers
         images = features   # batch of 1-channel images, float32, 0-255
         logits = self.build_model(images, is_training=mode == ModeKeys.TRAIN)
-
         # outputs (loss is computed if not in predict mode)
         probabilities = tf.nn.softmax(logits)
         loss_fn = lambda : tf.losses.sparse_softmax_cross_entropy(labels, logits)
-
         # create summaries
-        if params.get('summary_histograms', True):
+        if params.get('summary_histograms', True) and mode == ModeKeys.TRAIN:
             self.add_histogram_summaries()
-
         # create EstimatorSpecs depending on mode
         if mode == ModeKeys.PREDICT:
             predictions = {
@@ -151,13 +153,10 @@ class Model:
                 intermediate_dict = {i: out for i, out in enumerate(self.intermediate_outputs)}
                 predictions.update(intermediate_dict)
             return tf.estimator.EstimatorSpec(mode, predictions)
-
         loss = loss_fn()
-
         if mode == ModeKeys.TRAIN:
             optimization = self.optimizer.minimize(loss, global_step=tf.train.get_or_create_global_step())
             return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=optimization)
-
         assert mode == ModeKeys.EVAL, 'Received unexpected mode: %s' % mode
         metrics = {
             'accuracy': tf.metrics.accuracy(labels, predictions=tf.argmax(logits, axis=1)), }

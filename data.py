@@ -28,8 +28,7 @@ class Database:
     N_CLASSES = len(CLASSES)
     IMAGE_SIZE = (94, 94)
     DATASETS = {
-        'Char47K': database.loaders.Char47K(dirs=['font', 'hand', 'img_good'],
-            hand_upscale=20, images_upscale=8),
+        'Char47K': database.loaders.Char47K(dirs=['font', 'hand', 'img_good']),
         }
 
     def __init__(self, distortions=True, num_parallel_calls=3):
