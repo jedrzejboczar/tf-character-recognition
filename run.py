@@ -47,31 +47,63 @@ parser.add_argument('-D', '--development-main', action='store_true',
     help='run special main (development specific)')
 
 
-def development_main(model, database, estimator):
-    import cv2
-    import numpy as np
-    image = cv2.imread('database/chars74k/hand/test/S/img029-022.png')[:, :, 0].astype(np.float32)
-    image = cv2.resize(image, database.IMAGE_SIZE)
-    # model.create_filter_visualizations(image)
-    model.create_filter_visualizations(0)
+def development_main(args):
+    database = data.Database(distortions=False)
 
-    # def show_image(name, img, wait=0):
-    #     cv2.imshow(name, img)
-    #     return not cv2.waitKey(wait) in [27, ord('q')] # 'ESCAPE' or 'q'
-    #
-    # image = cv2.imread('database/chars74k/hand/test/S/img029-022.png')[:, :, 0].astype(np.float32)
-    # image = cv2.resize(image, database.IMAGE_SIZE)
-    # image = np.random.rand(*image.shape) * 255
-    # show_image('image', image/255, wait=0)
-    # print(np.min(image), np.max(image))
-    #
-    # # output = model.optimize_image(np.random.rand(*database.IMAGE_SIZE)*255)
-    # output = model.optimize_image(image)
-    #
-    # print('Optimization finished')
-    # show_image('image', output/255)
-    #
-    # cv2.imwrite('/tmp/image.png', output)
+    def train_input_fn(repeats):
+        return lambda : database.get_train_dataset().shuffle(10000).batch(
+            args.batch_size).repeat(repeats).prefetch(10)
+
+    def eval_input_fn():
+        return lambda : database.get_test_dataset().batch(args.batch_size).prefetch(10)
+
+    def predict_input_fn(files):
+        return lambda : database.from_files(files).batch(args.batch_size)
+
+    model = cnn_model.Autoencoder()
+    estimator = model.get_estimator()
+
+    if args.predict:
+        import cv2
+        import cv2_show
+        import numpy as np
+
+        predictions = estimator.predict(predict_input_fn(args.predict))
+        common_path = os.path.split(os.path.commonprefix(args.predict))[0]
+        filenames = [os.path.relpath(path, start=common_path) for path in args.predict]
+        max_filename_len = max(len(name) for name in filenames)
+
+        logger.info('Predictions:')
+        for filename, prediction_dict in zip(filenames, predictions):
+            image = prediction_dict['reconstructed']
+            original_image = cv2.imread(os.path.join(common_path, filename)).astype(np.float32)
+            logger.info('{name:>{nlen}}'.format(name=filename, nlen=max_filename_len))
+            logger.info('  original: %7.2f +- %7.2f, max=%7.2f, min=%7.2f' \
+                % (original_image.mean(), original_image.std(),
+                   original_image.max(), original_image.min()))
+            logger.info('   decoded: %7.2f +- %7.2f, max=%7.2f, min=%7.2f' \
+                % (image.mean(), image.std(),
+                   image.max(), image.min()))
+            cv2_show.show_image(original_image)
+            cv2_show.show_image(image)
+        return
+
+
+    info_epochs = lambda _from, _to: logger.info('EPOCHS from {} to {}:'.format(_from, _to))
+    info_time = lambda time, n_epochs: logger.info('Time per epoch: {:.2f} sec = {:.2f} min'.format(
+        time/n_epochs, time/n_epochs / 60))
+
+    info_epochs(1, args.epochs)
+    start = time.time()
+    estimator.train(train_input_fn(args.epochs))
+    info_time(time.time() - start, args.epochs)
+
+    start = time.time()
+    results = estimator.evaluate(eval_input_fn())
+    print(results)
+    logger.info('Eval in %.2f sec' % (time.time() - start))
+    # logger.info('Test data loss: %.3f (eval in %.2f sec)'
+    #     % (results['los'], time.time() - start))
 
 
 def main():
@@ -101,6 +133,10 @@ def main():
 
     def predict_input_fn(files):
         return lambda : database.from_files(files).batch(args.batch_size)
+
+    if args.development_main:
+        development_main(args)
+        return
 
     if args.train:
         info_epochs = lambda _from, _to: logger.info('EPOCHS from {} to {}:'.format(_from, _to))
@@ -149,9 +185,6 @@ def main():
 
     if args.show:
         model.visualize_activations(predict_input_fn(args.show))
-
-    if args.development_main:
-        development_main(model, database, estimator)
 
 
 if __name__ == '__main__':
