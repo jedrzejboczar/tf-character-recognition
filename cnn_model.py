@@ -282,11 +282,14 @@ class Model:
         optimize_op = tf.while_loop(optimize_cond, optimize_body, loop_vars=[tf.constant(0), tf.timestamp()])
         return optimize_op
 
-
+###
+# enc_v1 - MSE, relu activation for last layer
+# enc_v2 - MSE, sigmoid activation * 255
+###
 class Autoencoder:
     def __init__(self):
         self.logger = log.getLogger('autoencoder')
-        self.model_dir = 'models/enc_v1'
+        self.model_dir = 'models/enc_v2'
         self.optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
         self.encoded = None
 
@@ -309,26 +312,35 @@ class Autoencoder:
 
         self.logger.info('Building model...')
         self.logger.info('  %18s  (input)' % (input.shape))
-        encoded = self.build_encoder(input)
-        decoded = self.build_decoder(encoded)
+        encoded = self.build_encoder(input, is_training=is_training)
+        decoded = self.build_decoder(encoded, is_training=is_training)
         self.logger.info('  %18s  (output)' % (input.shape))
 
-        self.logger.info('Variables:')
+        self.logger.info('Trainable variables:')
         n = 0
-        for var in tf.get_collection('variables'):
+        for var in tf.get_collection('trainable_variables'):
             if var.name.startswith('global_step'):
                 continue
             n += var.shape.num_elements()
             self.logger.info('  #%-8d (%s)' % (var.shape.num_elements(), var.name))
         self.logger.info('total number of parameters: %d' % n)
 
-        return decoded
+        return encoded, decoded
+
+    def init_from_checkpoint(self):
+        """Loads weights for each layer from last checkpoint.
+        Needed only when not using tf.estimator.Estimator."""
+        assignment_map = {}
+        for var in tf.get_collection('trainable_variables'):
+            var_scope = var.name.split('/')[0]
+            assignment_map['%s/' % var_scope] = '%s/' % var_scope
+        tf.train.init_from_checkpoint(self.model_dir, assignment_map)
 
     def model_fn(self, features, labels, mode, config=None, params={}):
         """Model function for tf.estimator.Estimator"""
         # assemble model output from all layers
         images = features   # batch of 1-channel images, float32, 0-255
-        reconstructed = self.build_model(images, is_training=mode == ModeKeys.TRAIN)
+        encoded, reconstructed = self.build_model(images, is_training=mode == ModeKeys.TRAIN)
         # loss is computed if not in predict mode
         loss = tf.losses.mean_squared_error(images, reconstructed)
         # create EstimatorSpecs depending on mode
@@ -338,12 +350,16 @@ class Autoencoder:
             }
             return tf.estimator.EstimatorSpec(mode, predictions)
         if mode == ModeKeys.TRAIN:
-            optimization = self.optimizer.minimize(loss, global_step=tf.train.get_or_create_global_step())
+            grads_and_vars = self.optimizer.compute_gradients(loss)
+            for i, (grad, var) in enumerate(grads_and_vars):
+                tf.summary.histogram('gradient_%s' % var.name, grad)
+            optimization = self.optimizer.apply_gradients(grads_and_vars,
+                global_step=tf.train.get_or_create_global_step())
             return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=optimization)
         assert mode == ModeKeys.EVAL, 'Received unexpected mode: %s' % mode
         return tf.estimator.EstimatorSpec(mode, loss=loss)
 
-    def build_encoder(self, input):
+    def build_encoder(self, input, is_training=False):
         output = input
         output = tf.layers.conv2d(output, filters=8, kernel_size=5, activation=tf.nn.relu)
         self.logger.info('  %18s  (%s)' % (output.shape, output.name))
@@ -363,7 +379,7 @@ class Autoencoder:
         self.logger.info('  %18s  (%s)' % (output.shape, output.name))
         return output
 
-    def build_decoder(self, input):
+    def build_decoder(self, input, is_training=False):
         output = input
         output = self.upscaling2d(output, times=2)
         self.logger.info('  %18s  (%s)' % (output.shape, output.name))
@@ -381,8 +397,8 @@ class Autoencoder:
         self.logger.info('  %18s  (%s)' % (output.shape, output.name))
         output = tf.layers.conv2d_transpose(output, filters=8, kernel_size=5, activation=tf.nn.relu)
         self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.conv2d_transpose(output, filters=1, kernel_size=3, activation=tf.nn.relu)
-        return output
+        output = tf.layers.conv2d_transpose(output, filters=1, kernel_size=3, activation=tf.nn.sigmoid)
+        return output * 255
 
     def max_unpooling2d(self, input, indicies):
         # should use indicies from tf.nn.max_pool_with_argmax to put values in correct places
@@ -391,6 +407,20 @@ class Autoencoder:
     def upscaling2d(self, input, times=2):
         batch, height, width, channels = input.shape.as_list()  # must be 4D
         new_height, new_width = times * height, times * width
+        # method = tf.image.ResizeMethod.NEAREST_NEIGHBOR
         method = tf.image.ResizeMethod.NEAREST_NEIGHBOR
         upscaled = tf.image.resize_images(input, [new_height, new_width], method)
         return upscaled
+
+    def walk_latent_space(self, start_image, end_image, n_points):
+        # find points in the latent space
+        encoded = self.build_encoder(tf.stack([start_image, end_image]))
+        start_point, end_point = encoded[0], encoded[1]
+        # create linear interpolation of path
+        distance = end_point - start_point
+        path = tf.stack([start_point + i/n_points * distance for i in range(n_points + 1)])
+        # create image representations of points in the path
+        decoded = self.build_decoder(path)
+        # overwrite initialization of weights with trained ones
+        self.init_from_checkpoint()
+        return decoded

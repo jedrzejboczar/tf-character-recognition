@@ -48,6 +48,10 @@ parser.add_argument('-D', '--development-main', action='store_true',
 
 
 def development_main(args):
+    import cv2
+    import cv2_show
+    import numpy as np
+
     database = data.Database(distortions=False)
 
     def train_input_fn(repeats):
@@ -63,11 +67,19 @@ def development_main(args):
     model = cnn_model.Autoencoder()
     estimator = model.get_estimator()
 
-    if args.predict:
-        import cv2
-        import cv2_show
-        import numpy as np
+    if True:
+        total_time_sec = 5
+        n_images = 30
+        start_image, end_image = database.load_image(args.predict[0]), database.load_image(args.predict[1])
+        images_tensor = model.walk_latent_space(start_image, end_image, n_images)
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            images = sess.run(images_tensor)
+        for image in images:
+            cv2_show.show_image(image, wait=int(total_time_sec / n_images * 1e3))
+        return
 
+    if args.predict:
         predictions = estimator.predict(predict_input_fn(args.predict))
         common_path = os.path.split(os.path.commonprefix(args.predict))[0]
         filenames = [os.path.relpath(path, start=common_path) for path in args.predict]
@@ -84,8 +96,10 @@ def development_main(args):
             logger.info('   decoded: %7.2f +- %7.2f, max=%7.2f, min=%7.2f' \
                 % (image.mean(), image.std(),
                    image.max(), image.min()))
-            cv2_show.show_image(original_image)
-            cv2_show.show_image(image)
+            if not cv2_show.show_image(original_image):
+                break
+            if not cv2_show.show_image(image):
+                break
         return
 
 
