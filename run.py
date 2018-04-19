@@ -70,13 +70,13 @@ def development_main(args):
     estimator = model.get_estimator()
 
     if args.walk is not None:
-        time_per_step = .5
-        n_per_step = 100
+        time_per_step = 1
+        n_per_step = 30
 
         if len(args.walk) > 1:
             images = [database.load_image(filename) for filename in args.walk]
         else:
-            n_images = 100
+            n_images = 60
             allowed_types = ['font']
             # allowed_types = ['hand', 'font']
             train_test_types = ['train', 'test']
@@ -96,11 +96,22 @@ def development_main(args):
                 logger.info('  %s' % image_path)
 
         images_tensor_generator = model.walk_latent_space(images, n_per_step)
-        for images_batch in images_tensor_generator:
-            for image in images_batch:
+        if False:  # show real-time
+            for images_batch in images_tensor_generator:
+                for image in images_batch:
+                    if not cv2_show.show_image(image, wait=int(time_per_step / n_per_step * 1e3)):
+                        return
+            cv2_show.show_image(image, wait=True)
+        else:  # show after gathering all frames
+            images = []
+            for images_batch in images_tensor_generator:
+                for image in images_batch:
+                    images.append(image)
+            cv2_show.show_image(images[0], wait=True)
+            for image in images:
                 if not cv2_show.show_image(image, wait=int(time_per_step / n_per_step * 1e3)):
                     return
-        cv2_show.show_image(image, wait=True)
+            cv2_show.show_image(image, wait=True)
         return
 
     if args.predict:
