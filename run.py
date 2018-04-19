@@ -103,8 +103,6 @@ def development_main(args):
         cv2_show.show_image(image, wait=True)
         return
 
-    assert False, 'Guarding here for now'
-
     if args.predict:
         predictions = estimator.predict(predict_input_fn(args.predict))
         common_path = os.path.split(os.path.commonprefix(args.predict))[0]

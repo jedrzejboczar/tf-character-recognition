@@ -285,11 +285,13 @@ class Model:
 ###
 # enc_v1 - MSE, relu activation for last layer
 # enc_v2 - MSE, sigmoid activation * 255
+# enc_v3 - MSE, all activations are sigmoid, *255 at the end
+# enc_v4 - MSE, all relu, all kernels 3x3
 ###
 class Autoencoder:
     def __init__(self):
         self.logger = log.getLogger('autoencoder')
-        self.model_dir = 'models/enc_v2'
+        self.model_dir = 'models/enc_v4'
         self.optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
         self.encoded = None
 
@@ -314,7 +316,7 @@ class Autoencoder:
         self.logger.info('  %18s  (input)' % (input.shape))
         encoded = self.build_encoder(input, is_training=is_training)
         decoded = self.build_decoder(encoded, is_training=is_training)
-        self.logger.info('  %18s  (output)' % (input.shape))
+        self.logger.info('  %18s  (output)' % (decoded.shape))
 
         self.logger.info('Trainable variables:')
         n = 0
@@ -360,45 +362,46 @@ class Autoencoder:
         return tf.estimator.EstimatorSpec(mode, loss=loss)
 
     def build_encoder(self, input, is_training=False):
-        output = input
-        output = tf.layers.conv2d(output, filters=8, kernel_size=5, activation=tf.nn.relu)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.max_pooling2d(output, pool_size=2, strides=2)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.conv2d(output, filters=8, kernel_size=5, activation=tf.nn.relu)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.max_pooling2d(output, pool_size=2, strides=2)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.conv2d(output, filters=16, kernel_size=5, activation=tf.nn.relu)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.max_pooling2d(output, pool_size=2, strides=2)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.conv2d(output, filters=16, kernel_size=5, activation=tf.nn.relu)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.max_pooling2d(output, pool_size=2, strides=2)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        return output
+        outputs = [input]
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=4, kernel_size=5, activation=tf.nn.relu) ) # 90
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=8, kernel_size=3, activation=tf.nn.relu) ) # 88
+        outputs.append( tf.layers.max_pooling2d(outputs[-1], pool_size=2, strides=2) ) # 44
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=8, kernel_size=3, activation=tf.nn.relu) ) # 42
+        outputs.append( tf.layers.max_pooling2d(outputs[-1], pool_size=2, strides=2) ) # 21
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=8, kernel_size=3, activation=tf.nn.relu) ) # 19
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=8, kernel_size=3, activation=tf.nn.relu) ) # 17
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=16, kernel_size=3, activation=tf.nn.relu) ) # 15
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=16, kernel_size=3, activation=tf.nn.relu) ) # 13
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=16, kernel_size=3, activation=tf.nn.relu) ) # 11
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=16, kernel_size=3, activation=tf.nn.relu) ) # 9
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=24, kernel_size=3, activation=tf.nn.relu) ) # 7
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=24, kernel_size=3, activation=tf.nn.relu) ) # 5
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=32, kernel_size=3, activation=tf.nn.relu) ) # 3
+        outputs.append( tf.layers.conv2d(outputs[-1], filters=64, kernel_size=3, activation=tf.nn.relu) ) # 1
+        for output in outputs[1:]:
+            self.logger.info('  %18s  (%s)' % (output.shape, output.name))
+        return outputs[-1]
 
     def build_decoder(self, input, is_training=False):
-        output = input
-        output = self.upscaling2d(output, times=2)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.conv2d_transpose(output, filters=16, kernel_size=5, activation=tf.nn.relu)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = self.upscaling2d(output, times=2)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.conv2d_transpose(output, filters=16, kernel_size=5, activation=tf.nn.relu)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = self.upscaling2d(output, times=2)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.conv2d_transpose(output, filters=8, kernel_size=5, activation=tf.nn.relu)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = self.upscaling2d(output, times=2)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.conv2d_transpose(output, filters=8, kernel_size=5, activation=tf.nn.relu)
-        self.logger.info('  %18s  (%s)' % (output.shape, output.name))
-        output = tf.layers.conv2d_transpose(output, filters=1, kernel_size=3, activation=tf.nn.sigmoid)
-        return output * 255
+        outputs = [input]
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=32, kernel_size=3, activation=tf.nn.relu) ) # 3
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=24, kernel_size=3, activation=tf.nn.relu) ) # 5
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=24, kernel_size=3, activation=tf.nn.relu) ) # 7
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=16, kernel_size=3, activation=tf.nn.relu) ) # 9
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=16, kernel_size=3, activation=tf.nn.relu) ) # 11
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=16, kernel_size=3, activation=tf.nn.relu) ) # 13
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=16, kernel_size=3, activation=tf.nn.relu) ) # 15
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=8, kernel_size=3, activation=tf.nn.relu) ) # 17
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=8, kernel_size=3, activation=tf.nn.relu) ) # 19
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=8, kernel_size=3, activation=tf.nn.relu) ) # 19
+        outputs.append( self.upscaling2d(outputs[-1], times=2) )
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=8, kernel_size=3, activation=tf.nn.relu) ) # 42
+        outputs.append( self.upscaling2d(outputs[-1], times=2) )
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=4, kernel_size=3, activation=tf.nn.relu) ) # 88
+        outputs.append( tf.layers.conv2d_transpose(outputs[-1], filters=1, kernel_size=5, activation=tf.nn.relu) ) # 90
+        for output in outputs[1:-1]:
+            self.logger.info('  %18s  (%s)' % (output.shape, output.name))
+        return outputs[-1]
 
     def max_unpooling2d(self, input, indicies):
         # should use indicies from tf.nn.max_pool_with_argmax to put values in correct places
