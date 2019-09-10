@@ -47,7 +47,17 @@ Probably the most interesting thing that is also straghtforward to use is the GU
 python run.py -G
 ```
 
+Some screenshots:
+<img src="media/gui-1-P.png" width="33%"></img>
+<img src="media/gui-2-P.png" width="33%"></img>
+<img src="media/gui-3-R.png" width="33%"></img>
+<img src="media/gui-4-B.png" width="49%"></img>
+<img src="media/gui-5-3.png" width="49%"></img>
+
+
 Another quite straightforward option is the visualization of a walk in latent space:
 ```
 python run.p -DW
 ```
+
+Download this ![video](media/latent-space-walk.mp4) for an example result of latent space walk.
