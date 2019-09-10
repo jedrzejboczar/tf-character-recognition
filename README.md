@@ -48,12 +48,14 @@ python run.py -G
 ```
 
 Some screenshots:
+
+<div align="center">
 <img src="media/gui-1-P.png" width="33%"></img>
 <img src="media/gui-2-P.png" width="33%"></img>
 <img src="media/gui-3-R.png" width="33%"></img>
-<img src="media/gui-4-B.png" width="49%"></img>
-<img src="media/gui-5-3.png" width="49%"></img>
-
+<img src="media/gui-4-B.png" width="33%"></img>
+<img src="media/gui-5-3.png" width="33%"></img>
+</div>
 
 Another quite straightforward option is the visualization of a walk in latent space:
 ```
